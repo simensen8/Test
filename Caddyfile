@@ -1,0 +1,6 @@
+# Replace with your real domain before deploying -- Caddy automatically
+# obtains and renews a trusted TLS certificate for it via Let's Encrypt.
+# A bare IP address cannot get a trusted certificate, so a domain is required.
+your-domain.example.org {
+	reverse_proxy app:8000
+}

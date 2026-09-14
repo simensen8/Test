@@ -66,6 +66,66 @@ Run the test suite with:
 ./.venv/bin/pytest
 ```
 
+## Deploying it for real use
+
+This handles PHI, so **it needs to run somewhere covered by a signed
+Business Associate Agreement (BAA) before any real participant data
+touches it.** The steps below target a small, single-location deployment
+on AWS, since AWS lets any account accept their BAA for free and
+self-serve (no sales process) via **AWS Artifact** in the console --
+that's the main reason it's the simplest starting point if you don't
+already have a cloud provider.
+
+### 1. One-time account setup (you do this)
+
+1. Create an AWS account.
+2. In the AWS Console, go to **AWS Artifact > Agreements**, find the
+   **Business Associate Addendum**, and accept it. Free, immediate, no
+   approval wait.
+3. Register a domain (any registrar, ~$12/year). A trusted TLS
+   certificate can't be issued for a bare IP address, so this is
+   required, not optional -- and the app marks its session cookie
+   `Secure`, which needs real HTTPS to work at all.
+4. Create a **Lightsail** instance: Ubuntu 22.04, the smallest paid
+   plan is enough for one location's traffic (~$5/mo). Note its public
+   IP, then point your domain's DNS `A` record at it.
+5. In the Lightsail networking tab, open ports **80** and **443**
+   (443 is not open by default).
+
+### 2. Deploy (on the server, or hand me SSH access and I'll run these)
+
+```bash
+# On the fresh Ubuntu instance:
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && newgrp docker
+
+git clone -b claude/hipaa-billing-reconciliation-qty4bc https://github.com/simensen8/test.git
+cd test
+
+cp .env.example .env
+# Edit .env: set APP_ENCRYPTION_KEY and SESSION_SECRET_KEY to freshly
+# generated values (see the comment above each in .env.example) --
+# generate them once and store the values somewhere safe outside the
+# server (a password manager), since losing APP_ENCRYPTION_KEY makes
+# all stored PHI unrecoverable.
+
+# Edit Caddyfile: replace "your-domain.example.org" with your real domain.
+
+docker compose up -d --build
+```
+
+Then open `https://your-domain.example.org` and create the admin
+account on first visit.
+
+### 3. Ongoing
+
+- **Backups**: `docker compose exec app tar czf - /app/data | ...` (pipe
+  to wherever your backup destination is) on a schedule -- this directory
+  holds the encrypted database and uploaded source documents.
+- **Updates**: `git pull && docker compose up -d --build`
+- **Logs**: `docker compose logs -f app`
+- Caddy renews its own TLS certificate automatically; nothing to do there.
+
 ## Built and verified against real files
 
 `app/parsers/pcc_batch.py`, `attendance.py`, and `rate_master.py`, plus
