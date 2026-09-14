@@ -60,6 +60,11 @@ class Participant(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     full_name: Mapped[str] = mapped_column(EncryptedString(512))
     name_index: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # The facility's own internal participant ID (e.g. "PAM-6"), when a
+    # source document supplies one. Far more reliable than name matching
+    # when present -- it's an internal record number, not PHI on its own,
+    # so it's stored in the clear and indexed for fast exact lookups.
+    external_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     rate_rules: Mapped[list["RateRule"]] = relationship(back_populates="participant")
@@ -69,9 +74,11 @@ class Participant(Base):
 
 class GrantRuleType(str, enum.Enum):
     NONE = "none"
-    # After N days billed to the primary payer within a cycle, the next
-    # attended day bills to the grant payer instead (e.g. 3-for-1 Parker
-    # Grant arrangement), then the cycle repeats.
+    # After `grant_cycle_length` attended days billed to the primary
+    # payer, the next `grant_cycle_secondary_days` attended day(s) bill
+    # to the secondary ("grant") payer instead, then the cycle repeats.
+    # Despite the name, the secondary payer need not literally be a
+    # grant -- the same shape covers e.g. "1 day VA, then private pay."
     ROTATING_GRANT = "rotating_grant"
 
 
@@ -88,8 +95,10 @@ class RateRule(Base):
     rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     grant_rule_type: Mapped[GrantRuleType] = mapped_column(Enum(GrantRuleType), default=GrantRuleType.NONE)
     # For ROTATING_GRANT: after this many attended days billed to
-    # payer_source, the next attended day bills to grant_payer.
+    # payer_source, the next grant_cycle_secondary_days attended day(s)
+    # bill to grant_payer, then the cycle repeats.
     grant_cycle_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    grant_cycle_secondary_days: Mapped[int] = mapped_column(Integer, default=1)
     grant_payer: Mapped[str | None] = mapped_column(EncryptedString(255), nullable=True)
     # Day-of-week specific overrides are captured as free text notes for
     # human review rather than auto-applied, since payer source may vary

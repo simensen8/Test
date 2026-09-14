@@ -45,7 +45,7 @@ def test_missing_from_batch(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Davis")
+    participant, _, _ = get_or_create_participant(db, "Davis")
     _attend(db, participant, MON, True, att_upload)
     db.commit()
 
@@ -58,7 +58,7 @@ def test_billed_but_absent(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Evans")
+    participant, _, _ = get_or_create_participant(db, "Evans")
     _attend(db, participant, MON, False, att_upload)
 
     pcc_upload = _upload(db, UploadKind.PCC_BATCH, batch_date=MON, _user=user)
@@ -75,7 +75,7 @@ def test_wrong_payer(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Garcia")
+    participant, _, _ = get_or_create_participant(db, "Garcia")
     _attend(db, participant, MON, True, att_upload)
     db.add(RateRule(participant_id=participant.id, payer_source="Medicaid"))
 
@@ -96,7 +96,7 @@ def test_duplicate_entry(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Frost")
+    participant, _, _ = get_or_create_participant(db, "Frost")
     _attend(db, participant, MON, True, att_upload)
 
     pcc_upload = _upload(db, UploadKind.PCC_BATCH, batch_date=MON, _user=user)
@@ -128,7 +128,7 @@ def test_clean_day_no_exceptions(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Adams")
+    participant, _, _ = get_or_create_participant(db, "Adams")
     _attend(db, participant, MON, True, att_upload)
 
     pcc_upload = _upload(db, UploadKind.PCC_BATCH, batch_date=MON, _user=user)
@@ -143,7 +143,7 @@ def test_clean_day_no_exceptions(db_session):
 def test_default_private_pay_when_no_rate_rule(db_session):
     db = db_session
     user = _user(db)
-    participant, _ = get_or_create_participant(db, "Nobody")
+    participant, _, _ = get_or_create_participant(db, "Nobody")
     db.commit()
     expected = compute_expected_billing(db, participant.id, MON)
     assert expected.payer == "Private Pay"
@@ -157,7 +157,7 @@ def test_rotating_grant_cycle(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Carter")
+    participant, _, _ = get_or_create_participant(db, "Carter")
     db.add(RateRule(
         participant_id=participant.id, payer_source="Private Pay",
         grant_rule_type=GrantRuleType.ROTATING_GRANT, grant_cycle_length=3, grant_payer="Parker Grant",
@@ -183,7 +183,7 @@ def test_rotating_grant_skips_absences(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Carter")
+    participant, _, _ = get_or_create_participant(db, "Carter")
     db.add(RateRule(
         participant_id=participant.id, payer_source="Private Pay",
         grant_rule_type=GrantRuleType.ROTATING_GRANT, grant_cycle_length=3, grant_payer="Parker Grant",
@@ -200,11 +200,35 @@ def test_rotating_grant_skips_absences(db_session):
     assert compute_expected_billing(db, participant.id, THU).payer == "Private Pay"
 
 
+def test_rotating_payer_multi_secondary_days(db_session):
+    """'Three days private, then two days Title III' -- a generalized
+    rotation with more than one secondary day, and a secondary payer
+    that isn't literally a grant."""
+    db = db_session
+    user = _user(db)
+    att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
+    participant, _, _ = get_or_create_participant(db, "Cavalieri")
+    db.add(RateRule(
+        participant_id=participant.id, payer_source="Private Pay",
+        grant_rule_type=GrantRuleType.ROTATING_GRANT, grant_cycle_length=3,
+        grant_cycle_secondary_days=2, grant_payer="Title III",
+    ))
+    days = [MON, TUE, WED, THU, FRI]
+    for day in days:
+        _attend(db, participant, day, True, att_upload)
+    db.commit()
+
+    expected_payers = [compute_expected_billing(db, participant.id, d).payer for d in days]
+    assert expected_payers == [
+        "Private Pay", "Private Pay", "Private Pay", "Title III", "Title III",
+    ]
+
+
 def test_grant_rule_not_applied_exception(db_session):
     db = db_session
     user = _user(db)
     att_upload = _upload(db, UploadKind.WEEKLY_ATTENDANCE, week_start=MON, _user=user)
-    participant, _ = get_or_create_participant(db, "Carter")
+    participant, _, _ = get_or_create_participant(db, "Carter")
     db.add(RateRule(
         participant_id=participant.id, payer_source="Private Pay",
         grant_rule_type=GrantRuleType.ROTATING_GRANT, grant_cycle_length=3, grant_payer="Parker Grant",

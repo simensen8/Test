@@ -23,8 +23,9 @@
             <option value="{{ gt.value }}" {% if rule.grant_rule_type == gt %}selected{% endif %}>{{ gt.value }}</option>
             {% endfor %}
           </select>
-          <input form="edit-{{ rule.id }}" type="text" name="grant_cycle_length" placeholder="paid days before grant, e.g. 3" value="{{ rule.grant_cycle_length or '' }}" style="margin-top:0.3rem;">
-          <input form="edit-{{ rule.id }}" type="text" name="grant_payer" placeholder="Grant payer name" value="{{ rule.grant_payer or '' }}" style="margin-top:0.3rem;">
+          <input form="edit-{{ rule.id }}" type="text" name="grant_cycle_length" placeholder="primary-payer days, e.g. 3" value="{{ rule.grant_cycle_length or '' }}" style="margin-top:0.3rem;">
+          <input form="edit-{{ rule.id }}" type="text" name="grant_cycle_secondary_days" placeholder="secondary-payer days, e.g. 1" value="{{ rule.grant_cycle_secondary_days or 1 }}" style="margin-top:0.3rem;">
+          <input form="edit-{{ rule.id }}" type="text" name="grant_payer" placeholder="Secondary payer name" value="{{ rule.grant_payer or '' }}" style="margin-top:0.3rem;">
         </td>
         <td data-label="Notes"><input form="edit-{{ rule.id }}" type="text" name="notes" value="{{ rule.notes or '' }}"></td>
         <td>
@@ -59,9 +60,11 @@
         <select name="grant_rule_type">
           {% for gt in grant_types %}<option value="{{ gt.value }}">{{ gt.value }}</option>{% endfor %}
         </select>
-        <label>Paid days before grant day (e.g. 3)</label>
+        <label>Primary-payer days (e.g. 3)</label>
         <input type="text" name="grant_cycle_length">
-        <label>Grant payer name</label>
+        <label>Secondary-payer days (e.g. 1)</label>
+        <input type="text" name="grant_cycle_secondary_days" value="1">
+        <label>Secondary payer name</label>
         <input type="text" name="grant_payer">
         <label>Notes</label>
         <input type="text" name="notes">

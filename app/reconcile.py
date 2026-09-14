@@ -71,10 +71,15 @@ def compute_expected_billing(db: Session, participant_id: str, on_date: datetime
         return ExpectedBilling(payer=DEFAULT_PAYER, is_grant_day=False, rule=None)
 
     if rule.grant_rule_type == GrantRuleType.ROTATING_GRANT and rule.grant_cycle_length:
-        cycle = rule.grant_cycle_length + 1
+        # `grant_cycle_length` primary-payer days, then
+        # `grant_cycle_secondary_days` secondary-payer day(s), repeating
+        # (e.g. 3 Private Pay then 2 Title III -- not always a single
+        # "grant" day flip).
+        secondary_days = max(rule.grant_cycle_secondary_days or 1, 1)
+        cycle = rule.grant_cycle_length + secondary_days
         ordinal = _attended_ordinal(db, participant_id, on_date)
         position = ((ordinal - 1) % cycle) + 1
-        if position == cycle:
+        if position > rule.grant_cycle_length:
             return ExpectedBilling(payer=rule.grant_payer or "Grant", is_grant_day=True, rule=rule)
 
     return ExpectedBilling(payer=rule.payer_source, is_grant_day=False, rule=rule)

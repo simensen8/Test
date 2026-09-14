@@ -31,28 +31,34 @@ def add_rule(
     rate: str = Form(""),
     grant_rule_type: str = Form("none"),
     grant_cycle_length: str = Form(""),
+    grant_cycle_secondary_days: str = Form("1"),
     grant_payer: str = Form(""),
     notes: str = Form(""),
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    participant, _ = get_or_create_participant(db, participant_name)
+    participant, _, ambiguity = get_or_create_participant(db, participant_name)
     rate_val = float(rate) if rate else None
     cycle_val = int(grant_cycle_length) if grant_cycle_length else None
+    secondary_val = int(grant_cycle_secondary_days) if grant_cycle_secondary_days else 1
     db.add(RateRule(
         participant_id=participant.id,
         payer_source=payer_source.strip(),
         rate=rate_val,
         grant_rule_type=GrantRuleType(grant_rule_type),
         grant_cycle_length=cycle_val,
+        grant_cycle_secondary_days=secondary_val,
         grant_payer=grant_payer.strip() or None,
         notes=notes.strip() or None,
     ))
     db.commit()
     log_audit(db, user=user, action="add_rate_rule", request=request, detail=participant_name)
     resp = RedirectResponse(url="/rate-master", status_code=303)
-    set_flash(resp, f"Rate rule added for {participant_name}.", "success")
+    msg = f"Rate rule added for {participant_name}."
+    if ambiguity:
+        msg += " " + ambiguity
+    set_flash(resp, msg, "success" if not ambiguity else "error")
     return resp
 
 
@@ -64,6 +70,7 @@ def edit_rule(
     rate: str = Form(""),
     grant_rule_type: str = Form("none"),
     grant_cycle_length: str = Form(""),
+    grant_cycle_secondary_days: str = Form("1"),
     grant_payer: str = Form(""),
     notes: str = Form(""),
     csrf_token: str = Depends(verify_csrf),
@@ -80,6 +87,7 @@ def edit_rule(
     rule.rate = float(rate) if rate else None
     rule.grant_rule_type = GrantRuleType(grant_rule_type)
     rule.grant_cycle_length = int(grant_cycle_length) if grant_cycle_length else None
+    rule.grant_cycle_secondary_days = int(grant_cycle_secondary_days) if grant_cycle_secondary_days else 1
     rule.grant_payer = grant_payer.strip() or None
     rule.notes = notes.strip() or None
     db.commit()

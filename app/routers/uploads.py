@@ -70,16 +70,18 @@ async def upload_attendance(
         stored_path=stored_path,
         uploaded_by_id=user.id,
         week_start=week_start_date,
-        parse_warnings="\n".join(result.warnings) or None,
     )
     db.add(upload)
     db.flush()
 
     created_count = 0
+    ambiguous_warnings: list[str] = []
     for row in result.rows:
-        participant, created = get_or_create_participant(db, row.participant_name)
+        participant, created, ambiguity = get_or_create_participant(db, row.participant_name)
         if created:
             created_count += 1
+        if ambiguity:
+            ambiguous_warnings.append(ambiguity)
         for day, attended in row.attendance_by_date.items():
             existing = db.scalar(
                 select(AttendanceRecord).where(
@@ -94,6 +96,9 @@ async def upload_attendance(
                 db.add(AttendanceRecord(
                     participant_id=participant.id, date=day, attended=attended, source_upload_id=upload.id,
                 ))
+
+    all_warnings = result.warnings + ambiguous_warnings
+    upload.parse_warnings = "\n".join(all_warnings) or None
     db.commit()
 
     log_audit(db, user=user, action="upload_weekly_attendance", resource=upload.id, request=request,
@@ -101,9 +106,9 @@ async def upload_attendance(
 
     resp = RedirectResponse(url="/dashboard?week=" + week_start_date.isoformat(), status_code=303)
     msg = f"Weekly attendance uploaded: {len(result.rows)} participants ({created_count} new)."
-    if result.warnings:
-        msg += " Warnings: " + "; ".join(result.warnings)
-    set_flash(resp, msg, "success" if not result.warnings else "error")
+    if all_warnings:
+        msg += " Warnings: " + "; ".join(all_warnings)
+    set_flash(resp, msg, "success" if not all_warnings else "error")
     return resp
 
 
@@ -124,7 +129,6 @@ async def upload_rate_master(
         original_filename=file.filename,
         stored_path=stored_path,
         uploaded_by_id=user.id,
-        parse_warnings="\n".join(result.warnings) or None,
     )
     db.add(upload)
     db.flush()
@@ -135,18 +139,25 @@ async def upload_rate_master(
     for rule in db.scalars(select(RateRule).where(RateRule.source_upload_id.isnot(None))):
         rule.active = False
 
+    ambiguous_warnings: list[str] = []
     for row in result.rows:
-        participant, _ = get_or_create_participant(db, row.participant_name)
+        participant, _, ambiguity = get_or_create_participant(db, row.participant_name)
+        if ambiguity:
+            ambiguous_warnings.append(ambiguity)
         db.add(RateRule(
             participant_id=participant.id,
             payer_source=row.payer_source,
             rate=row.rate,
             grant_rule_type=GrantRuleType(row.grant_rule_type),
             grant_cycle_length=row.grant_cycle_length,
+            grant_cycle_secondary_days=row.grant_cycle_secondary_days,
             grant_payer=row.grant_payer,
             notes=row.notes,
             source_upload_id=upload.id,
         ))
+
+    all_warnings = result.warnings + ambiguous_warnings
+    upload.parse_warnings = "\n".join(all_warnings) or None
     db.commit()
 
     log_audit(db, user=user, action="upload_rate_master", resource=upload.id, request=request,
@@ -154,9 +165,9 @@ async def upload_rate_master(
 
     resp = RedirectResponse(url="/rate-master", status_code=303)
     msg = f"Rate Master uploaded: {len(result.rows)} rules loaded."
-    if result.warnings:
-        msg += " Please review: " + "; ".join(result.warnings)
-    set_flash(resp, msg, "success" if not result.warnings else "error")
+    if all_warnings:
+        msg += " Please review: " + "; ".join(all_warnings)
+    set_flash(resp, msg, "success" if not all_warnings else "error")
     return resp
 
 
@@ -179,6 +190,16 @@ async def upload_pcc_batch(
     raw = await _read_limited(file)
     stored_path = save_encrypted("pcc_batch", file.filename, raw)
     result = parse_pcc_batch(raw)
+
+    mismatched_dates = {
+        row.row_date for row in result.rows
+        if row.row_date and row.row_date != batch_date_val.strftime("%-m/%-d/%Y")
+    }
+    if mismatched_dates:
+        result.warnings.append(
+            f"This file's own date(s) ({', '.join(sorted(mismatched_dates))}) don't match the "
+            f"billing date you selected ({batch_date_val.isoformat()}) -- double check you uploaded the right file."
+        )
 
     upload = Upload(
         kind=UploadKind.PCC_BATCH,
