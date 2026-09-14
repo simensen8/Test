@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block content %}
+<h1>Audit Log</h1>
+<p class="muted">Most recent 500 entries. Every login, upload, view, and edit touching PHI is recorded here.</p>
+<div class="panel">
+  <table>
+    <thead><tr><th>Time (UTC)</th><th>User</th><th>Action</th><th>Resource</th><th>IP</th><th>Result</th><th>Detail</th></tr></thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td data-label="Time">{{ e.at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td data-label="User">{{ e.user_email_snapshot or '—' }}</td>
+        <td data-label="Action">{{ e.action }}</td>
+        <td data-label="Resource" class="muted">{{ e.resource or '' }}</td>
+        <td data-label="IP" class="muted">{{ e.ip_address or '' }}</td>
+        <td data-label="Result">{% if e.success %}<span class="badge badge-ok">ok</span>{% else %}<span class="badge badge-danger">failed</span>{% endif %}</td>
+        <td data-label="Detail" class="muted">{{ e.detail or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

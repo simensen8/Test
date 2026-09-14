@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Upload documents{% endblock %}
+{% block content %}
+<h1>Upload source documents</h1>
+<p class="muted">Uploaded files are encrypted at rest. Every upload and view is recorded in the audit log.</p>
+
+<div class="grid-2">
+  <div class="panel">
+    <h2 style="margin-top:0;">Weekly Attendance Excel</h2>
+    <p class="muted">One worksheet per week (Monday&ndash;Friday), transcribed from the paper sign-in sheet.</p>
+    <form method="post" action="/upload/attendance" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="week_start">Week start (Monday)</label>
+      <input type="date" id="week_start" name="week_start" value="{{ today }}" required>
+      <label for="attendance_file">Excel file (.xlsx)</label>
+      <input type="file" id="attendance_file" name="file" accept=".xlsx,.xls" required>
+      <div style="margin-top:1rem;"><button type="submit">Upload attendance</button></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0;">Daily PCC Ancillary Batch (PDF)</h2>
+    <p class="muted">One PDF per billing day, sorted alphabetically by last name.</p>
+    <form method="post" action="/upload/pcc-batch" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="batch_date">Billing date</label>
+      <input type="date" id="batch_date" name="batch_date" value="{{ today }}" required>
+      <label for="batch_file">PDF file</label>
+      <input type="file" id="batch_file" name="file" accept=".pdf" required>
+      <div style="margin-top:1rem;"><button type="submit">Upload batch</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Rate Master Excel</h2>
+  <p class="muted">Consolidated payer-exception list. Participants not listed default to Private Pay. Uploading a new file replaces auto-imported rules (manually-added rules are kept).</p>
+  <form method="post" action="/upload/rate-master" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="rate_file">Excel file (.xlsx)</label>
+    <input type="file" id="rate_file" name="file" accept=".xlsx,.xls" required>
+    <div style="margin-top:1rem;"><button type="submit">Upload rate master</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ date }}{% endblock %}
+{% block content %}
+<h1>Exception Report — {{ date.strftime('%A, %B %-d, %Y') }}</h1>
+
+<div class="panel" style="display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    {% if not run %}
+      <span class="badge badge-muted">Not yet reconciled</span>
+      <p class="muted">Upload the Weekly Attendance and PCC batch for this date, then run reconciliation from the batch review screen.</p>
+      <a class="button" href="/batches/{{ date.isoformat() }}/review">Go to batch review</a>
+    {% elif run.exception_count == 0 %}
+      <span class="badge badge-ok" style="font-size:1rem;">Reconciled / No Exceptions</span>
+      <p class="muted">Reconciliation run at {{ run.run_at.strftime('%Y-%m-%d %H:%M UTC') }}.</p>
+    {% else %}
+      <span class="badge badge-danger" style="font-size:1rem;">{{ run.exception_count }} exception(s) found</span>
+      <p class="muted">Reconciliation run at {{ run.run_at.strftime('%Y-%m-%d %H:%M UTC') }}.</p>
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:0.5rem;">
+    {% if run %}<a class="button secondary" href="/reports/{{ date.isoformat() }}/export.csv">Export CSV</a>{% endif %}
+    <form method="post" action="/reports/{{ date.isoformat() }}/reconcile">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="secondary">Re-run reconciliation</button>
+    </form>
+  </div>
+</div>
+
+{% if exceptions %}
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Participant</th>
+        <th>Reason</th>
+        <th>Expected Billing</th>
+        <th>Actual Billing (PCC)</th>
+        <th>Detail</th>
+        <th>Status</th>
+        <th>Resolve</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for exc in exceptions %}
+      <tr>
+        <td data-label="Participant">{{ exc.participant_name_snapshot }}</td>
+        <td data-label="Reason">
+          {% set reason_labels = {
+            'missing_from_batch': 'Attended, missing from batch',
+            'billed_but_absent': 'Billed but absent',
+            'wrong_payer': 'Incorrect payer source',
+            'grant_rule_not_applied': 'Grant rule not applied',
+            'unmatched_name': 'Cannot match across sources',
+            'duplicate_entry': 'Duplicate billing entry',
+          } %}
+          <span class="badge badge-danger">{{ reason_labels.get(exc.reason.value, exc.reason.value) }}</span>
+        </td>
+        <td data-label="Expected">{{ exc.expected_billing or '—' }}</td>
+        <td data-label="Actual">{{ exc.actual_billing or '—' }}</td>
+        <td data-label="Detail" class="muted">{{ exc.detail or '' }}</td>
+        <td data-label="Status">
+          {% if exc.status.value == 'open' %}<span class="badge badge-warn">open</span>
+          {% elif exc.status.value == 'resolved' %}<span class="badge badge-ok">resolved</span>
+          {% else %}<span class="badge badge-muted">not an error</span>{% endif %}
+        </td>
+        <td data-label="Resolve">
+          <form method="post" action="/exceptions/{{ exc.id }}/resolve">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <select name="status">
+              <option value="open" {% if exc.status.value == 'open' %}selected{% endif %}>Open</option>
+              <option value="resolved" {% if exc.status.value == 'resolved' %}selected{% endif %}>Resolved</option>
+              <option value="not_an_error" {% if exc.status.value == 'not_an_error' %}selected{% endif %}>Not an error</option>
+            </select>
+            <input type="text" name="resolution_notes" placeholder="Notes" value="{{ exc.resolution_notes or '' }}">
+            <button type="submit" style="margin-top:0.4rem;">Save</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

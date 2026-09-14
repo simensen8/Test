@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Rate Master{% endblock %}
+{% block content %}
+<h1>Rate Master</h1>
+<p class="muted">Participant-specific payer sources, rates, and billing exceptions. Anyone not listed here defaults to Private Pay with no special rule.</p>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr><th>Participant</th><th>Payer source</th><th>Rate</th><th>Grant rule</th><th>Notes</th><th>Save</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for rule in rules %}
+      <form id="edit-{{ rule.id }}" method="post" action="/rate-master/{{ rule.id }}/edit"></form>
+      <form id="deactivate-{{ rule.id }}" method="post" action="/rate-master/{{ rule.id }}/deactivate" onsubmit="return confirm('Remove this rate rule?');"></form>
+      <tr>
+        <td data-label="Participant">{{ rule.participant.full_name }}</td>
+        <td data-label="Payer"><input form="edit-{{ rule.id }}" type="text" name="payer_source" value="{{ rule.payer_source }}"></td>
+        <td data-label="Rate"><input form="edit-{{ rule.id }}" type="text" name="rate" value="{{ rule.rate if rule.rate is not none else '' }}" style="width:80px;"></td>
+        <td data-label="Grant rule">
+          <select form="edit-{{ rule.id }}" name="grant_rule_type">
+            {% for gt in grant_types %}
+            <option value="{{ gt.value }}" {% if rule.grant_rule_type == gt %}selected{% endif %}>{{ gt.value }}</option>
+            {% endfor %}
+          </select>
+          <input form="edit-{{ rule.id }}" type="text" name="grant_cycle_length" placeholder="paid days before grant, e.g. 3" value="{{ rule.grant_cycle_length or '' }}" style="margin-top:0.3rem;">
+          <input form="edit-{{ rule.id }}" type="text" name="grant_payer" placeholder="Grant payer name" value="{{ rule.grant_payer or '' }}" style="margin-top:0.3rem;">
+        </td>
+        <td data-label="Notes"><input form="edit-{{ rule.id }}" type="text" name="notes" value="{{ rule.notes or '' }}"></td>
+        <td>
+          <input form="edit-{{ rule.id }}" type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button form="edit-{{ rule.id }}" type="submit">Save</button>
+        </td>
+        <td>
+          <input form="deactivate-{{ rule.id }}" type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button form="deactivate-{{ rule.id }}" type="submit" class="danger">Remove</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Add rate rule manually</h2>
+  <form method="post" action="/rate-master/add">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="grid-2">
+      <div>
+        <label>Participant name</label>
+        <input type="text" name="participant_name" required>
+        <label>Payer source</label>
+        <input type="text" name="payer_source" required>
+        <label>Rate</label>
+        <input type="text" name="rate">
+      </div>
+      <div>
+        <label>Grant rule type</label>
+        <select name="grant_rule_type">
+          {% for gt in grant_types %}<option value="{{ gt.value }}">{{ gt.value }}</option>{% endfor %}
+        </select>
+        <label>Paid days before grant day (e.g. 3)</label>
+        <input type="text" name="grant_cycle_length">
+        <label>Grant payer name</label>
+        <input type="text" name="grant_payer">
+        <label>Notes</label>
+        <input type="text" name="notes">
+      </div>
+    </div>
+    <div style="margin-top:1rem;"><button type="submit">Add rule</button></div>
+  </form>
+</div>
+{% endblock %}

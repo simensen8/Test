@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h1>Manage users</h1>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td data-label="Name">{{ u.display_name }}</td>
+        <td data-label="Email">{{ u.email }}</td>
+        <td data-label="Role">{{ u.role.value }}</td>
+        <td data-label="Status">{% if u.active %}<span class="badge badge-ok">active</span>{% else %}<span class="badge badge-muted">disabled</span>{% endif %}</td>
+        <td data-label="Last login">{{ u.last_login_at.strftime('%Y-%m-%d %H:%M UTC') if u.last_login_at else 'never' }}</td>
+        <td>
+          {% if u.active %}
+          <form method="post" action="/admin/users/{{ u.id }}/deactivate">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="danger">Deactivate</button>
+          </form>
+          {% else %}
+          <form method="post" action="/admin/users/{{ u.id }}/reactivate">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit">Reactivate</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Add user</h2>
+  <form method="post" action="/admin/users/create">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Full name</label>
+    <input type="text" name="display_name" required>
+    <label>Work email</label>
+    <input type="email" name="email" required>
+    <label>Role</label>
+    <select name="role">{% for r in roles %}<option value="{{ r.value }}">{{ r.value }}</option>{% endfor %}</select>
+    <label>Temporary password (share via a secure channel, not email)</label>
+    <input type="text" name="temp_password" minlength="12" required>
+    <div style="margin-top:1rem;"><button type="submit">Create user</button></div>
+  </form>
+</div>
+{% endblock %}

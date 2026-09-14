@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Review batch — {{ date }}{% endblock %}
+{% block content %}
+<h1>PCC Batch Review — {{ date.strftime('%A, %B %-d, %Y') }}</h1>
+<p class="muted">Confirm every row extracted from the PDF before reconciling. Correct anything the parser misread; add rows it missed; delete anything that doesn't belong.</p>
+
+{% if warnings %}
+  <div class="flash flash-error">
+    <strong>Extraction warnings:</strong>
+    <ul style="margin:0.3rem 0 0;padding-left:1.1rem;">{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<div class="panel">
+  <form method="post" action="/batches/{{ date.isoformat() }}/review/save">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table>
+      <thead>
+        <tr>
+          <th>Participant name (as on batch)</th>
+          <th>Suggested match</th>
+          <th>Payer source</th>
+          <th>Amount</th>
+          <th>Units</th>
+          <th>Verified?</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td data-label="Name"><input type="hidden" name="row_id" value="{{ row.id }}">
+            <input type="text" name="name_{{ row.id }}" value="{{ row.raw_name }}"></td>
+          <td data-label="Suggested match">
+            {% if row.id in suggestions %}<span class="badge badge-warn">{{ suggestions[row.id] }}</span>
+            {% elif row.participant_id %}<span class="badge badge-ok">matched</span>
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td data-label="Payer"><input type="text" name="payer_{{ row.id }}" value="{{ row.payer_source or '' }}"></td>
+          <td data-label="Amount"><input type="text" name="amount_{{ row.id }}" value="{{ '%.2f'|format(row.amount) if row.amount is not none else '' }}"></td>
+          <td data-label="Units"><input type="text" name="units_{{ row.id }}" value="{{ row.units or '' }}"></td>
+          <td data-label="Verified">{% if row.verified %}<span class="badge badge-ok">yes</span>{% else %}<span class="badge badge-warn">pending</span>{% endif %}</td>
+          <td><button type="submit" class="danger" formaction="/batches/{{ date.isoformat() }}/review/delete/{{ row.id }}">Delete</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="margin-top:1rem;display:flex;gap:0.6rem;">
+      <button type="submit">Save &amp; mark reviewed rows verified</button>
+      <button type="submit" class="secondary" formaction="/batches/{{ date.isoformat() }}/review/add-row">Add row</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <form method="post" action="/reports/{{ date.isoformat() }}/reconcile">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if not all_verified %}
+      <p class="muted">All rows must be saved as verified above before running reconciliation.</p>
+    {% endif %}
+    <button type="submit" {% if not all_verified %}disabled{% endif %}>Run reconciliation for this date</button>
+  </form>
+</div>
+{% endblock %}

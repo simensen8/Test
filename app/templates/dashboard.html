@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Weekly Billing Reconciliation</h1>
+<div class="week-nav">
+  <a class="button secondary" href="/dashboard?week={{ prev_week }}">&larr; Previous week</a>
+  <strong>Week of {{ week_start.strftime('%B %-d, %Y') }}</strong>
+  <a class="button secondary" href="/dashboard?week={{ next_week }}">Next week &rarr;</a>
+  <a class="button" href="/upload" style="margin-left:auto;">Upload documents</a>
+</div>
+
+<div class="panel">
+  {% for day in days %}
+    <div class="day-card">
+      <div>
+        <strong>{{ day.date.strftime('%A, %B %-d, %Y') }}</strong><br>
+        <span class="muted">
+          Attendance: {% if day.has_attendance %}uploaded{% else %}missing{% endif %} ·
+          PCC batch: {% if day.has_batch %}uploaded{% else %}missing{% endif %}
+        </span>
+      </div>
+      <div>
+        {% if not day.run %}
+          <span class="badge badge-muted">Not yet reconciled</span>
+        {% elif day.open_exceptions == 0 %}
+          <span class="badge badge-ok">Reconciled / No Exceptions</span>
+        {% else %}
+          <span class="badge badge-danger">{{ day.open_exceptions }} open exception{{ 's' if day.open_exceptions != 1 else '' }}</span>
+        {% endif %}
+        <a class="button secondary" href="/reports/{{ day.date.isoformat() }}">View</a>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}
