@@ -23,6 +23,8 @@ table/text-heuristic parser as before. Either way, every extracted row
 is flagged `verified=False` and must be confirmed in the Batch Review
 screen before it feeds reconciliation.
 """
+import collections
+import datetime
 import io
 import re
 from dataclasses import dataclass, field
@@ -33,6 +35,12 @@ from bs4 import BeautifulSoup
 from app.payer_categories import categorize_payer, categorize_payer_from_fields
 
 AMOUNT_RE = re.compile(r"\$?\s*(-?[\d,]{1,7}\.\d{2})\b")
+# The batch's own header row describes the day it covers, e.g.
+# "911 Services for 9/10/2026". That's the authoritative service date --
+# it's what PCC posted the batch for -- so the director never has to key
+# a date in and can't pair the wrong day with a file.
+SERVICES_FOR_RE = re.compile(r"services\s+for\s+(\d{1,2}/\d{1,2}/\d{4})", re.I)
+US_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 NAME_RE = re.compile(r"^([A-Z][A-Za-z'’\-]+),\s*([A-Z][A-Za-z'’\-]+(?:\s+[A-Z]\.(?=\s|$))?)")
 
 PAYER_KEYWORDS = [
@@ -64,6 +72,40 @@ class BatchParseResult:
     rows: list[BatchRow] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     extraction_method: str = "none"
+    # The service date this file covers, read from the file itself.
+    batch_date: datetime.date | None = None
+    # How batch_date was determined: "header" (the batch's "Services for
+    # M/D/YYYY" line), "rows" (the Eff. Date the rows agree on), or
+    # "none". Shown to the reviewer so an inferred date gets a second look.
+    batch_date_source: str = "none"
+
+
+def parse_us_date(text: str | None) -> datetime.date | None:
+    """Parse PCC's M/D/YYYY dates. Returns None rather than raising --
+    a malformed date means 'unknown', which the caller surfaces for the
+    reviewer to resolve, never a guess."""
+    if not text:
+        return None
+    m = US_DATE_RE.match(text.strip())
+    if not m:
+        return None
+    month, day, year = (int(g) for g in m.groups())
+    try:
+        return datetime.date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _date_from_rows(rows: list[BatchRow]) -> tuple[datetime.date | None, set[str]]:
+    """The date the rows' Eff. Date column agrees on, plus every distinct
+    date text seen (so a mixed-date file can be called out)."""
+    seen = {r.row_date.strip() for r in rows if r.row_date and r.row_date.strip()}
+    counts = collections.Counter(
+        d for d in (parse_us_date(r.row_date) for r in rows) if d is not None
+    )
+    if not counts:
+        return None, seen
+    return counts.most_common(1)[0][0], seen
 
 
 # ---------------------------------------------------------------- HTML ----
@@ -85,6 +127,13 @@ def _decode_html(raw_bytes: bytes) -> str:
 def _extract_via_html(raw_bytes: bytes) -> BatchParseResult:
     result = BatchParseResult(extraction_method="html-table")
     soup = BeautifulSoup(_decode_html(raw_bytes), "lxml")
+
+    header_match = SERVICES_FOR_RE.search(soup.get_text(" ", strip=True))
+    if header_match:
+        header_date = parse_us_date(header_match.group(1))
+        if header_date:
+            result.batch_date = header_date
+            result.batch_date_source = "header"
 
     header_tr = None
     for tr in soup.find_all("tr"):
@@ -248,6 +297,15 @@ def _extract_via_text(pdf) -> list[BatchRow]:
 def _extract_via_pdf(raw_bytes: bytes) -> BatchParseResult:
     result = BatchParseResult()
     with pdfplumber.open(io.BytesIO(raw_bytes)) as pdf:
+        for page in pdf.pages:
+            header_match = SERVICES_FOR_RE.search(page.extract_text() or "")
+            if header_match:
+                header_date = parse_us_date(header_match.group(1))
+                if header_date:
+                    result.batch_date = header_date
+                    result.batch_date_source = "header"
+                break
+
         table_rows = _extract_via_tables(pdf)
         if table_rows is not None:
             result.rows = table_rows
@@ -272,6 +330,29 @@ def parse_pcc_batch(file_bytes: bytes) -> BatchParseResult:
 
     if not result.rows and not result.warnings:
         result.warnings.append("No participant billing lines could be extracted from this file. Manual entry required.")
+
+    row_date, distinct_row_dates = _date_from_rows(result.rows)
+    if result.batch_date is None:
+        # No "Services for M/D/YYYY" header (an older export, or a PDF
+        # print that dropped it): fall back to what the rows themselves
+        # say. If they don't say either, the caller refuses the file
+        # rather than filing a day's billing under a guessed date.
+        if row_date is not None:
+            result.batch_date = row_date
+            result.batch_date_source = "rows"
+    elif row_date is not None and row_date != result.batch_date:
+        result.warnings.append(
+            f"This batch is headed \"Services for {result.batch_date.strftime('%-m/%-d/%Y')}\" but its rows are "
+            f"dated {row_date.strftime('%-m/%-d/%Y')}. The header date was used -- check this is the right file."
+        )
+
+    if len(distinct_row_dates) > 1:
+        result.warnings.append(
+            "This file contains service dates for more than one day ("
+            + ", ".join(sorted(distinct_row_dates))
+            + f"). All rows were filed under {result.batch_date.strftime('%-m/%-d/%Y') if result.batch_date else 'no date'} "
+            "-- upload one batch per billing day."
+        )
 
     missing_payer = sum(1 for r in result.rows if not r.payer_source)
     if missing_payer:

@@ -20,13 +20,12 @@
 
   <div class="panel">
     <h2 style="margin-top:0;">Daily PCC Ancillary Batch</h2>
-    <p class="muted">One export per billing day, sorted alphabetically by last name. Save the PCC batch detail report as a webpage (.html) -- a PDF export also works.</p>
+    <p class="muted">One export per billing day. Save the PCC batch detail report as a webpage (.html) &mdash; a PDF export also works. You can select a whole week's files at once; each one is filed under the service date printed on it, so there's no date to key in.</p>
     <form method="post" action="/upload/pcc-batch" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="batch_date">Billing date</label>
-      <input type="date" id="batch_date" name="batch_date" value="{{ today }}" required>
-      <label for="batch_file">Batch file (.html, .htm, .pdf)</label>
-      <input type="file" id="batch_file" name="file" accept=".html,.htm,.pdf" required>
+      <label for="batch_file">Batch file(s) (.html, .htm, .pdf)</label>
+      <input type="file" id="batch_file" name="files" accept=".html,.htm,.pdf" multiple required>
+      <p class="muted" style="margin:.4rem 0 0;">Uploading a day again replaces that day rather than adding to it.</p>
       <div style="margin-top:1rem;"><button type="submit">Upload batch</button></div>
     </form>
   </div>

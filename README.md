@@ -34,7 +34,12 @@ payer source*, never *incorrect rate*.
 1. **Upload** the Weekly Attendance workbook (`.xlsx` or `.ods`), the
    Rate Master workbook (`.xlsx`), and each day's PCC batch export
    (`.html` -- save the PCC batch detail report page as a webpage; a
-   `.pdf` export also works as a fallback) at `/upload`.
+   `.pdf` export also works as a fallback) at `/upload`. Batch exports
+   can be uploaded several at a time (a whole week in one go): each file
+   is filed under the service date printed on it -- the "Services for
+   M/D/YYYY" line, falling back to the rows' Eff. Date -- so there is no
+   date to key in. A file whose date can't be read is refused rather
+   than guessed at, and uploading a day again replaces that day.
 2. **Review** the auto-extracted batch rows (`/batches/<date>/review`)
    and correct/confirm them -- extraction is a best-effort parser, not
    ground truth, so every row must be verified before it can feed

@@ -20,3 +20,34 @@ def db_session():
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture()
+def client(db_session):
+    """A TestClient logged in as an admin, sharing the db_session's
+    schema. Route-level tests need this: the upload handlers do their
+    real work (CSRF, encryption at rest, audit logging) only when driven
+    through the app, not by calling the function directly."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models import Role, User
+    from app.security import hash_password
+
+    user = User(
+        email="director@example.org", display_name="Director",
+        password_hash=hash_password("correct horse battery"), role=Role.ADMIN,
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    test_client = TestClient(app)
+    # The login form itself carries no CSRF token (there's no session to
+    # tie one to yet); every form behind the login does.
+    resp = test_client.post(
+        "/login",
+        data={"email": "director@example.org", "password": "correct horse battery"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+    return test_client

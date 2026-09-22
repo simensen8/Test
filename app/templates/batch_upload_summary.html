@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Batch upload results{% endblock %}
+{% block content %}
+<h1>Batch upload results</h1>
+{% set imported = summary | selectattr('error', 'none') | list %}
+{% set failed = summary | rejectattr('error', 'none') | list %}
+<p class="muted">
+  {{ imported | length }} of {{ summary | length }} file(s) imported.
+  Each day still has to be verified and reconciled on its own review screen.
+</p>
+
+<table>
+  <thead>
+    <tr><th>File</th><th>Billing date</th><th>Rows</th><th>Notes</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for item in summary %}
+    <tr>
+      <td>{{ item.filename }}</td>
+      <td>
+        {% if item.date %}{{ item.date.strftime('%a, %b %-d, %Y') }}{% else %}<span class="muted">&mdash;</span>{% endif %}
+      </td>
+      <td>{{ item.row_count }}</td>
+      <td>
+        {% if item.error %}
+          <span class="badge badge-danger">Not imported</span>
+          <div>{{ item.error }}</div>
+        {% endif %}
+        {% if item.replaced_rows %}
+          <div>Replaced the existing batch for this date ({{ item.replaced_rows }} row(s){% if item.replaced_exceptions %}
+            and {{ item.replaced_exceptions }} reconciliation exception(s){% endif %} removed).</div>
+        {% endif %}
+        {% for warning in item.warnings %}
+          <div class="muted">{{ warning }}</div>
+        {% endfor %}
+        {% if not item.error and not item.warnings and not item.replaced_rows %}
+          <span class="muted">No issues.</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if not item.error %}
+          <a href="/batches/{{ item.date.isoformat() }}/review">Verify rows</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if failed %}
+<div class="panel">
+  <h2 style="margin-top:0;">What to do about the files that didn't import</h2>
+  <p class="muted">
+    Nothing from those files was saved. Re-export the day from PCC using
+    <strong>Save Page As &rarr; Webpage, HTML Only</strong> so the batch header
+    (&ldquo;Services for M/D/YYYY&rdquo;) is included, then upload it again.
+  </p>
+</div>
+{% endif %}
+
+<div style="margin-top:1rem;">
+  <a href="/upload"><button type="button">Upload more files</button></a>
+  <a href="/dashboard" style="margin-left:.5rem;">Back to dashboard</a>
+</div>
+{% endblock %}
