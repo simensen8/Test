@@ -40,15 +40,20 @@ payer source*, never *incorrect rate*.
    M/D/YYYY" line, falling back to the rows' Eff. Date -- so there is no
    date to key in. A file whose date can't be read is refused rather
    than guessed at, and uploading a day again replaces that day.
-2. **Review** the auto-extracted batch rows (`/batches/<date>/review`)
+2. **Check the roster** (`/participants`) when a name looks wrong. Every
+   participant uploads have seen has a profile: canonical name, PCC ID,
+   status (active/trial/discharged), notes, and how they're billed. Two
+   records that turn out to be one person are merged there, which moves
+   their attendance, billing and payer rule onto a single record.
+3. **Review** the auto-extracted batch rows (`/batches/<date>/review`)
    and correct/confirm them -- extraction is a best-effort parser, not
    ground truth, so every row must be verified before it can feed
    reconciliation.
-3. **Reconcile** the day. The exception report (`/reports/<date>`) shows
+4. **Reconcile** the day. The exception report (`/reports/<date>`) shows
    participant, date, expected billing, actual PCC billing, and the
    reason for every discrepancy, with room to record how it was
    resolved. Zero exceptions renders as "Reconciled / No Exceptions."
-4. **Export** a CSV of the exception report for finance/compliance
+5. **Export** a CSV of the exception report for finance/compliance
    recordkeeping.
 
 ## Local setup

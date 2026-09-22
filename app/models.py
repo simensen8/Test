@@ -49,6 +49,12 @@ class User(Base):
     last_login_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ParticipantStatus(str, enum.Enum):
+    ACTIVE = "active"
+    TRIAL = "trial"          # replaces the "Trials:" section of the paper sheet
+    DISCHARGED = "discharged"
+
+
 class Participant(Base):
     """Canonical participant identity, matched across uploads via a blind
     index on the (encrypted) normalized name. In this program, roster
@@ -70,6 +76,12 @@ class Participant(Base):
     # name can be resolved against the whole family rather than against
     # whichever record happens to hold the plain `name_index` slot.
     last_name_index: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    status: Mapped[ParticipantStatus] = mapped_column(
+        Enum(ParticipantStatus), default=ParticipantStatus.ACTIVE, server_default="ACTIVE",
+    )
+    # Context that isn't a billing rule (transport, family contact
+    # preferences). PHI, so encrypted like every other free text field.
+    notes: Mapped[str | None] = mapped_column(EncryptedString(2000), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     rate_rules: Mapped[list["RateRule"]] = relationship(back_populates="participant")

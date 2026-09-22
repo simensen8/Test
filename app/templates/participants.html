@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Roster{% endblock %}
+{% block content %}
+<h1>Participant roster</h1>
+<p class="muted">
+  Everyone the program has records for: {{ total }} participant{{ '' if total == 1 else 's' }}.
+  People are added automatically by uploads; open a profile to correct a name, record a PCC ID,
+  set how they're billed, or merge two records that turned out to be one person.
+</p>
+
+<div class="panel">
+  <form method="get" action="/participants" class="grid-2">
+    <div>
+      <label for="q">Search name or PCC ID</label>
+      <input type="search" id="q" name="q" value="{{ q }}" placeholder="e.g. Hall, or PAM-6">
+    </div>
+    <div>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">All</option>
+        {% for s in statuses %}
+        <option value="{{ s.value }}" {% if status_filter == s.value %}selected{% endif %}>{{ s.value }}</option>
+        {% endfor %}
+      </select>
+      <div style="margin-top:1rem;">
+        <button type="submit">Search</button>
+        {% if q or status_filter %}<a href="/participants" style="margin-left:.5rem;">Clear</a>{% endif %}
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Name</th><th>PCC ID</th><th>Status</th><th>How they're billed</th><th></th></tr></thead>
+    <tbody>
+      {% for person in people %}
+      <tr>
+        <td data-label="Name">
+          <a href="/participants/{{ person.id }}">{{ person.full_name }}</a>
+          {% if person.full_name.split(',')[0].strip().lower() in shared_surnames %}
+            <span class="badge badge-warn" title="Another participant shares this surname">shared surname</span>
+          {% endif %}
+        </td>
+        <td data-label="PCC ID">{{ person.external_id or '—' }}</td>
+        <td data-label="Status">
+          {% if person.status.value == 'active' %}<span class="badge badge-ok">active</span>
+          {% elif person.status.value == 'trial' %}<span class="badge badge-warn">trial</span>
+          {% else %}<span class="badge badge-muted">discharged</span>{% endif %}
+        </td>
+        <td data-label="Billing">
+          {% set rules = rules_by_participant.get(person.id) or [] %}
+          {% if rules %}
+            {% for rule in rules %}
+              {{ rule.payer_source }}{% if rule.grant_rule_type.value != 'none' and rule.grant_cycle_length %},
+              then {{ rule.grant_payer or 'grant' }} for {{ rule.grant_cycle_secondary_days }} day(s)
+              every {{ rule.grant_cycle_length + rule.grant_cycle_secondary_days }}{% endif %}{% if not loop.last %}; {% endif %}
+            {% endfor %}
+          {% else %}
+            <span class="muted">Private Pay (default)</span>
+          {% endif %}
+        </td>
+        <td><a href="/participants/{{ person.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No participants match. Upload an attendance sheet or a PCC batch to build the roster.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Add someone manually</h2>
+  <p class="muted">Only needed for a participant who isn't on any uploaded document yet &mdash; a new enrollment, say.</p>
+  <form method="post" action="/participants/new">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="grid-2">
+      <div>
+        <label for="full_name">Name (Last, First)</label>
+        <input type="text" id="full_name" name="full_name" placeholder="Hall, Tressa" required>
+      </div>
+      <div>
+        <label for="new_external_id">PCC ID (optional)</label>
+        <input type="text" id="new_external_id" name="external_id" placeholder="PAM-185">
+        <label for="new_status">Status</label>
+        <select id="new_status" name="status">
+          {% for s in statuses %}<option value="{{ s.value }}">{{ s.value }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:1rem;"><button type="submit">Add participant</button></div>
+  </form>
+</div>
+{% endblock %}

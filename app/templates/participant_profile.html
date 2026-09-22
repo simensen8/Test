@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}{{ participant.full_name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="/participants">&larr; Roster</a></p>
+<h1 style="margin-bottom:.25rem;">{{ participant.full_name }}</h1>
+<p class="muted">
+  {{ participant.external_id or 'No PCC ID recorded' }} ·
+  {% if participant.status.value == 'active' %}<span class="badge badge-ok">active</span>
+  {% elif participant.status.value == 'trial' %}<span class="badge badge-warn">trial</span>
+  {% else %}<span class="badge badge-muted">discharged</span>{% endif %}
+</p>
+
+<div class="grid-2">
+  <div class="panel">
+    <h2 style="margin-top:0;">Details</h2>
+    <form method="post" action="/participants/{{ participant.id }}/edit">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="full_name">Name (Last, First)</label>
+      <input type="text" id="full_name" name="full_name" value="{{ participant.full_name }}" required>
+      <label for="external_id">PCC ID</label>
+      <input type="text" id="external_id" name="external_id" value="{{ participant.external_id or '' }}"
+             placeholder="PAM-185">
+      <p class="muted" style="margin:.25rem 0 .75rem;">
+        The most reliable way to match this person to a batch row. Worth filling in wherever you know it.
+      </p>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        {% for s in statuses %}
+        <option value="{{ s.value }}" {% if participant.status == s %}selected{% endif %}>{{ s.value }}</option>
+        {% endfor %}
+      </select>
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="3"
+                placeholder="Context that isn't a billing rule">{{ participant.notes or '' }}</textarea>
+      <div style="margin-top:1rem;"><button type="submit">Save details</button></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0;">How they're billed</h2>
+    {% if rules %}
+      {% for rule in rules %}
+      <form method="post" action="/participants/{{ participant.id }}/rules/{{ rule.id }}/edit"
+            style="border-bottom:1px solid #e6e9ee;padding-bottom:1rem;margin-bottom:1rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Payer source</label>
+        <input type="text" name="payer_source" value="{{ rule.payer_source }}" list="payers" required>
+        <label>Rate (optional)</label>
+        <input type="text" name="rate" value="{{ rule.rate if rule.rate is not none else '' }}" placeholder="95.00">
+        <label>Rotation</label>
+        <select name="grant_rule_type">
+          {% for gt in grant_types %}
+          <option value="{{ gt.value }}" {% if rule.grant_rule_type == gt %}selected{% endif %}>
+            {{ 'No rotation' if gt.value == 'none' else 'Rotates to a second payer' }}</option>
+          {% endfor %}
+        </select>
+        <div class="grid-2" style="margin-top:.5rem;">
+          <div>
+            <label>Days on the payer above</label>
+            <input type="number" min="1" name="grant_cycle_length" value="{{ rule.grant_cycle_length or '' }}">
+          </div>
+          <div>
+            <label>Then days on</label>
+            <input type="number" min="1" name="grant_cycle_secondary_days" value="{{ rule.grant_cycle_secondary_days or 1 }}">
+          </div>
+        </div>
+        <label>Second payer</label>
+        <input type="text" name="grant_payer" value="{{ rule.grant_payer or '' }}" list="payers"
+               placeholder="e.g. Parker Grant">
+        <div class="grid-2" style="margin-top:.5rem;">
+          <div>
+            <label>In force from</label>
+            <input type="date" name="effective_start" value="{{ rule.effective_start.isoformat() if rule.effective_start else '' }}">
+          </div>
+          <div>
+            <label>Until</label>
+            <input type="date" name="effective_end" value="{{ rule.effective_end.isoformat() if rule.effective_end else '' }}">
+          </div>
+        </div>
+        <label>Notes</label>
+        <input type="text" name="notes" value="{{ rule.notes or '' }}">
+        <div style="margin-top:1rem;">
+          <button type="submit">Save billing</button>
+        </div>
+      </form>
+      <form method="post" action="/participants/{{ participant.id }}/rules/{{ rule.id }}/remove"
+            onsubmit="return confirm('Remove this billing rule? {{ participant.full_name }} will default to Private Pay.');"
+            style="margin-top:-.5rem;margin-bottom:1.5rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="danger secondary">Remove rule</button>
+      </form>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No rule recorded, so this participant is expected to bill as <strong>Private Pay</strong> every day they attend.</p>
+      <details>
+        <summary>Set how they're billed</summary>
+        <form method="post" action="/participants/{{ participant.id }}/rules/add" style="margin-top:1rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Payer source</label>
+          <input type="text" name="payer_source" list="payers" required>
+          <label>Rate (optional)</label>
+          <input type="text" name="rate" placeholder="95.00">
+          <label>Rotation</label>
+          <select name="grant_rule_type">
+            {% for gt in grant_types %}
+            <option value="{{ gt.value }}">{{ 'No rotation' if gt.value == 'none' else 'Rotates to a second payer' }}</option>
+            {% endfor %}
+          </select>
+          <div class="grid-2" style="margin-top:.5rem;">
+            <div><label>Days on the payer above</label><input type="number" min="1" name="grant_cycle_length"></div>
+            <div><label>Then days on</label><input type="number" min="1" name="grant_cycle_secondary_days" value="1"></div>
+          </div>
+          <label>Second payer</label>
+          <input type="text" name="grant_payer" list="payers" placeholder="e.g. Parker Grant">
+          <div class="grid-2" style="margin-top:.5rem;">
+            <div><label>In force from</label><input type="date" name="effective_start"></div>
+            <div><label>Until</label><input type="date" name="effective_end"></div>
+          </div>
+          <label>Notes</label>
+          <input type="text" name="notes">
+          <div style="margin-top:1rem;"><button type="submit">Save billing</button></div>
+        </form>
+      </details>
+    {% endif %}
+  </div>
+</div>
+
+<datalist id="payers">
+  {% for payer in payer_options %}<option value="{{ payer }}">{% endfor %}
+</datalist>
+
+{% if same_surname %}
+<div class="panel">
+  <h2 style="margin-top:0;">Same surname as</h2>
+  <p class="muted">
+    If one of these is the same person recorded twice, merging moves their attendance, billing and
+    billing rule onto one record. The record you merge is then deleted. This can't be undone, so
+    check the two profiles first.
+  </p>
+  <table>
+    <thead><tr><th>Participant</th><th>PCC ID</th><th></th></tr></thead>
+    <tbody>
+      {% for other in same_surname %}
+      <tr>
+        <td><a href="/participants/{{ other.id }}">{{ other.full_name }}</a></td>
+        <td>{{ other.external_id or '—' }}</td>
+        <td>
+          <form method="post" action="/participants/{{ participant.id }}/merge"
+                onsubmit="return confirm('Merge {{ participant.full_name }} into {{ other.full_name }}? {{ participant.full_name }} will be deleted.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="target_id" value="{{ other.id }}">
+            <button type="submit" class="secondary">Merge this profile into theirs</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="panel">
+    <h2 style="margin-top:0;">Attendance, last {{ recent_days }} days</h2>
+    {% if attendance %}
+    <table>
+      <thead><tr><th>Date</th><th>Attended</th></tr></thead>
+      <tbody>
+        {% for record in attendance %}
+        <tr>
+          <td>{{ record.date.strftime('%a, %b %-d') }}</td>
+          <td>{% if record.attended %}<span class="badge badge-ok">present</span>{% else %}<span class="badge badge-muted">absent</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">No attendance recorded in this period.</p>{% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0;">Billed, last {{ recent_days }} days</h2>
+    {% if billing %}
+    <table>
+      <thead><tr><th>Date</th><th>Payer</th><th>Amount</th></tr></thead>
+      <tbody>
+        {% for record in billing %}
+        <tr>
+          <td>{{ record.date.strftime('%a, %b %-d') }}</td>
+          <td>{{ record.payer_source or '—' }}</td>
+          <td>{% if record.amount is not none %}${{ '%.2f'|format(record.amount) }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">Nothing billed in this period.</p>{% endif %}
+  </div>
+</div>
+
+{% if exceptions %}
+<div class="panel">
+  <h2 style="margin-top:0;">Exceptions raised</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      {% for exception in exceptions %}
+      <tr>
+        <td>{{ exception.date.strftime('%b %-d, %Y') }}</td>
+        <td>{{ exception.reason.value.replace('_', ' ') }}</td>
+        <td>{{ exception.status.value.replace('_', ' ') }}</td>
+        <td><a href="/reports/{{ exception.date.isoformat() }}">Open that day</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

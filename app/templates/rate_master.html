@@ -2,7 +2,11 @@
 {% block title %}Rate Master{% endblock %}
 {% block content %}
 <h1>Rate Master</h1>
-<p class="muted">Participant-specific payer sources, rates, and billing exceptions. Anyone not listed here defaults to Private Pay with no special rule.</p>
+<p class="muted">
+  Participant-specific payer sources, rates, and billing exceptions. Anyone not listed here defaults
+  to Private Pay with no special rule. This is the whole list in one place; the same settings live on
+  each person's <a href="/participants">profile</a>, which is usually the easier place to change one.
+</p>
 
 <div class="panel">
   <table>
@@ -14,7 +18,7 @@
       <form id="edit-{{ rule.id }}" method="post" action="/rate-master/{{ rule.id }}/edit"></form>
       <form id="deactivate-{{ rule.id }}" method="post" action="/rate-master/{{ rule.id }}/deactivate" onsubmit="return confirm('Remove this rate rule?');"></form>
       <tr>
-        <td data-label="Participant">{{ rule.participant.full_name }}</td>
+        <td data-label="Participant"><a href="/participants/{{ rule.participant.id }}">{{ rule.participant.full_name }}</a></td>
         <td data-label="Payer"><input form="edit-{{ rule.id }}" type="text" name="payer_source" value="{{ rule.payer_source }}"></td>
         <td data-label="Rate"><input form="edit-{{ rule.id }}" type="text" name="rate" value="{{ rule.rate if rule.rate is not none else '' }}" style="width:80px;"></td>
         <td data-label="Grant rule">

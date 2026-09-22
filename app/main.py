@@ -6,7 +6,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import COOKIE_SECURE, SESSION_ABSOLUTE_TIMEOUT_HOURS
 from app.db import Base, engine
 from app.migrations import run_migrations
-from app.routers import account, admin, auth, batches, dashboard, rate_master, reports, uploads
+from app.routers import (
+    account, admin, auth, batches, dashboard, participants, rate_master, reports, uploads,
+)
 from app.security import SESSION_COOKIE_NAME, refresh_session_token
 
 # create_all builds any wholly new table (and a fresh database in full);
@@ -24,6 +26,7 @@ app.include_router(dashboard.router)
 app.include_router(uploads.router)
 app.include_router(batches.router)
 app.include_router(reports.router)
+app.include_router(participants.router)
 app.include_router(rate_master.router)
 app.include_router(admin.router)
 

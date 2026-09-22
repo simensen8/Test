@@ -44,6 +44,24 @@ def add_participant_last_name_index() -> None:
     logger.info("Added participants.last_name_index")
 
 
+def add_participant_profile_columns() -> None:
+    """Add the profile fields (status, notes) to an existing roster."""
+    columns = _column_names("participants")
+    if not columns:
+        return
+
+    with engine.begin() as conn:
+        if "status" not in columns:
+            # Everyone already on the roster is by definition someone the
+            # program is serving, so they start active.
+            conn.execute(text("ALTER TABLE participants ADD COLUMN status VARCHAR(20) "
+                              "NOT NULL DEFAULT 'ACTIVE'"))
+            logger.info("Added participants.status")
+        if "notes" not in columns:
+            conn.execute(text("ALTER TABLE participants ADD COLUMN notes VARCHAR(2000)"))
+            logger.info("Added participants.notes")
+
+
 def backfill_participant_last_name_index() -> None:
     from app.matching import extract_last_name
     from app.models import Participant
@@ -65,4 +83,5 @@ def backfill_participant_last_name_index() -> None:
 
 def run_migrations() -> None:
     add_participant_last_name_index()
+    add_participant_profile_columns()
     backfill_participant_last_name_index()

@@ -189,8 +189,9 @@ def get_or_create_participant(db: Session, raw_name: str) -> tuple[Participant, 
         others = ", ".join(f"'{c.full_name}'" for c in candidates[:3])
         warning = (
             f"'{clean_name}' shares the last name '{last_name.title()}' with {others} but doesn't "
-            f"look like the same person -- kept as a separate participant. Please confirm in the "
-            f"roster, and merge them if they are one person recorded two ways."
+            f"look like the same person, so they were kept as separate participants. If they are "
+            f"one person recorded two ways, merge them on the Roster (their profile lists everyone "
+            f"sharing the surname)."
         )
     return participant, True, warning
 
