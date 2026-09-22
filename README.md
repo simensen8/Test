@@ -53,9 +53,13 @@ payer source*, never *incorrect rate*.
    month view.
 3. **Check the roster** (`/participants`) when a name looks wrong. Every
    participant uploads have seen has a profile: canonical name, PCC ID,
-   status (active/trial/discharged), notes, and how they're billed. Two
-   records that turn out to be one person are merged there, which moves
-   their attendance, billing and payer rule onto a single record.
+   status (active/trial/discharged), notes, how they're billed, and
+   optionally a photo (encrypted at rest like any other upload, shown
+   only to signed-in users, accepted only once consent is attested, and
+   removable at any time -- location and camera metadata are stripped on
+   the way in). Two records that turn out to be one person are merged
+   there, which moves their attendance, billing and payer rule onto a
+   single record.
 4. **Review** the auto-extracted batch rows (`/batches/<date>/review`)
    and correct/confirm them -- extraction is a best-effort parser, not
    ground truth, so every row must be verified before it can feed
@@ -240,7 +244,9 @@ operation, not of a single codebase.** Here's the split:
 - **Encryption at rest.** Participant names, notes, and other PHI text
   fields are encrypted at the database-column level (Fernet/AES) before
   they're written, not just relying on disk encryption. Uploaded source
-  documents (the Excel/PDF files themselves) are encrypted on disk too.
+  documents (the Excel/PDF files themselves) are encrypted on disk too,
+  as are participant photos -- which are also re-encoded on upload, so
+  EXIF metadata such as the coordinates a phone recorded never lands.
   Exact-match lookups on encrypted names use a keyed HMAC blind index,
   so the database never stores or indexes plaintext PHI.
 - **Access control & authentication.** Password login with bcrypt

@@ -82,6 +82,17 @@ class Participant(Base):
     # Context that isn't a billing rule (transport, family contact
     # preferences). PHI, so encrypted like every other free text field.
     notes: Mapped[str | None] = mapped_column(EncryptedString(2000), nullable=True)
+    # A photo is a biometric-ish identifier attached to a health record,
+    # so it is stored encrypted like every uploaded document and only
+    # accepted once someone records that consent is on file. The consent
+    # itself lives in the participant's paper file; what's kept here is
+    # who attested to it and when.
+    photo_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    photo_uploaded_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    photo_consent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    photo_consent_by_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True,
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     rate_rules: Mapped[list["RateRule"]] = relationship(back_populates="participant")

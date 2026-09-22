@@ -37,6 +37,7 @@
       {% for person in people %}
       <tr>
         <td data-label="Name">
+          {% if person.photo_path %}<img class="avatar" src="/participants/{{ person.id }}/photo" alt="">{% endif %}
           <a href="/participants/{{ person.id }}">{{ person.full_name }}</a>
           {% if person.full_name.split(',')[0].strip().lower() in shared_surnames %}
             <span class="badge badge-warn" title="Another participant shares this surname">shared surname</span>

@@ -8,8 +8,8 @@ split was right, and correct one that wasn't) with nowhere to happen.
 """
 import datetime
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Form, Request, UploadFile
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,8 +29,10 @@ from app.models import (
     RateRule,
 )
 from app.payer_categories import CANONICAL_CATEGORIES
+from app.photos import PhotoError, normalize_photo
 from app.render import render
 from app.security import get_current_user, log_audit
+from app.storage import delete_stored, load_decrypted, save_encrypted
 
 router = APIRouter()
 
@@ -574,4 +576,122 @@ async def set_schedule(
               detail=schedule.describe())
     resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
     set_flash(resp, f"{participant.full_name} is expected on {schedule.describe()}.", "success")
+    return resp
+
+
+# -------------------------------------------------------------- photo ----
+
+MAX_PHOTO_BYTES = 12 * 1024 * 1024
+
+
+@router.post("/participants/{participant_id}/photo")
+async def upload_photo(
+    participant_id: str,
+    request: Request,
+    consent: str = Form(""),
+    photo: UploadFile = None,
+    csrf_token: str = Depends(verify_csrf),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Attach a photo to a participant's profile.
+
+    Staff recognise faces faster than names, which is the whole point on
+    a check-in list of eighty-odd people. But a photograph attached to a
+    health record is PHI in its own right, so it is encrypted at rest
+    like every other uploaded file, served only to a signed-in user, and
+    refused until someone attests that consent is on file.
+    """
+    participant = db.get(Participant, participant_id)
+    if participant is None:
+        resp = RedirectResponse(url="/participants", status_code=303)
+        set_flash(resp, "That participant no longer exists.", "error")
+        return resp
+
+    back = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+    if consent != "yes":
+        set_flash(back, "A photo can only be added once consent is on file -- tick the box to confirm it is.",
+                  "error")
+        return back
+    if photo is None or not photo.filename:
+        set_flash(back, "No photo was selected.", "error")
+        return back
+
+    raw = await photo.read(MAX_PHOTO_BYTES + 1)
+    if len(raw) > MAX_PHOTO_BYTES:
+        set_flash(back, "That photo is over the 12 MB limit.", "error")
+        return back
+
+    try:
+        normalized = normalize_photo(raw)
+    except PhotoError as exc:
+        set_flash(back, str(exc), "error")
+        return back
+
+    previous = participant.photo_path
+    participant.photo_path = save_encrypted("participant_photo", "photo.jpg", normalized)
+    participant.photo_uploaded_at = datetime.datetime.utcnow()
+    participant.photo_consent_at = datetime.datetime.utcnow()
+    participant.photo_consent_by_id = user.id
+    db.commit()
+    if previous:
+        delete_stored(previous)
+
+    log_audit(db, user=user, action="upload_participant_photo", resource=participant_id, request=request,
+              detail="consent attested")
+    set_flash(back, "Photo added.", "success")
+    return back
+
+
+@router.get("/participants/{participant_id}/photo")
+def participant_photo(
+    participant_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Serve the decrypted photo to a signed-in user.
+
+    No audit entry: this is fetched by the browser for every thumbnail
+    on the roster and check-in screens, and burying the log in image
+    requests would make it useless for spotting the accesses that
+    matter. Opening the profile is what gets logged.
+    """
+    participant = db.get(Participant, participant_id)
+    if participant is None or not participant.photo_path:
+        return Response(status_code=404)
+    try:
+        image = load_decrypted(participant.photo_path)
+    except (FileNotFoundError, ValueError):
+        return Response(status_code=404)
+    # Cache-Control: no-store comes from the app-wide security headers.
+    return Response(content=image, media_type="image/jpeg")
+
+
+@router.post("/participants/{participant_id}/photo/remove")
+def remove_photo(
+    participant_id: str,
+    request: Request,
+    csrf_token: str = Depends(verify_csrf),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    participant = db.get(Participant, participant_id)
+    if participant is None:
+        resp = RedirectResponse(url="/participants", status_code=303)
+        set_flash(resp, "That participant no longer exists.", "error")
+        return resp
+
+    stored = participant.photo_path
+    participant.photo_path = None
+    participant.photo_uploaded_at = None
+    participant.photo_consent_at = None
+    participant.photo_consent_by_id = None
+    db.commit()
+    if stored:
+        delete_stored(stored)
+
+    log_audit(db, user=user, action="remove_participant_photo", resource=participant_id, request=request)
+    resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+    set_flash(resp, "Photo removed.", "success")
     return resp

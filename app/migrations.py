@@ -60,6 +60,15 @@ def add_participant_profile_columns() -> None:
         if "notes" not in columns:
             conn.execute(text("ALTER TABLE participants ADD COLUMN notes VARCHAR(2000)"))
             logger.info("Added participants.notes")
+        for name, ddl in (
+            ("photo_path", "ALTER TABLE participants ADD COLUMN photo_path VARCHAR(1024)"),
+            ("photo_uploaded_at", "ALTER TABLE participants ADD COLUMN photo_uploaded_at DATETIME"),
+            ("photo_consent_at", "ALTER TABLE participants ADD COLUMN photo_consent_at DATETIME"),
+            ("photo_consent_by_id", "ALTER TABLE participants ADD COLUMN photo_consent_by_id VARCHAR(36)"),
+        ):
+            if name not in columns:
+                conn.execute(text(ddl))
+                logger.info("Added participants.%s", name)
 
 
 def backfill_participant_last_name_index() -> None:

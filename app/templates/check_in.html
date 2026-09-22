@@ -44,6 +44,7 @@
       {% for row in rows %}
       <tr id="p-{{ row.participant.id }}">
         <td data-label="Participant">
+          {% if row.participant.photo_path %}<img class="avatar" src="/participants/{{ row.participant.id }}/photo" alt="">{% endif %}
           <a href="/participants/{{ row.participant.id }}">{{ row.participant.full_name }}</a>
           {% if not row.scheduled %}<span class="badge badge-muted" title="Not on today's schedule">drop-in</span>{% endif %}
           {% if row.participant.status.value == 'trial' %}<span class="badge badge-warn">trial</span>{% endif %}

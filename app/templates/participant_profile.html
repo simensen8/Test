@@ -12,6 +12,46 @@
 
 <div class="grid-2">
   <div class="panel">
+    <h2 style="margin-top:0;">Photo</h2>
+    <div style="display:flex;gap:1rem;align-items:flex-start;">
+      {% if participant.photo_path %}
+      <img class="avatar-lg" src="/participants/{{ participant.id }}/photo"
+           alt="Photograph of {{ participant.full_name }}">
+      {% endif %}
+      <div style="flex:1;">
+        {% if participant.photo_path %}
+          <p class="muted" style="margin-top:0;">
+            Added {{ participant.photo_uploaded_at.strftime('%b %-d, %Y') }}; consent confirmed on file.
+          </p>
+          <form method="post" action="/participants/{{ participant.id }}/photo/remove"
+                onsubmit="return confirm('Remove this photo?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="danger secondary">Remove photo</button>
+          </form>
+        {% else %}
+          <p class="muted" style="margin-top:0;">
+            A photo helps staff recognise who they're checking in. It's stored encrypted, shown only to
+            people signed in here, and can be removed at any time.
+          </p>
+        {% endif %}
+        <details {% if not participant.photo_path %}open{% endif %} style="margin-top:.75rem;">
+          <summary>{{ 'Replace photo' if participant.photo_path else 'Add a photo' }}</summary>
+          <form method="post" action="/participants/{{ participant.id }}/photo"
+                enctype="multipart/form-data" style="margin-top:.75rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="file" name="photo" accept="image/*" required>
+            <label style="display:flex;gap:.5rem;align-items:flex-start;margin-top:.75rem;font-weight:500;">
+              <input type="checkbox" name="consent" value="yes" style="width:auto;margin:.2rem 0 0;" required>
+              <span>Photo consent for {{ participant.full_name }} is on file.</span>
+            </label>
+            <div style="margin-top:1rem;"><button type="submit">Save photo</button></div>
+          </form>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
     <h2 style="margin-top:0;">Details</h2>
     <form method="post" action="/participants/{{ participant.id }}/edit">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
