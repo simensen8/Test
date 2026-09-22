@@ -65,6 +65,11 @@ class Participant(Base):
     # when present -- it's an internal record number, not PHI on its own,
     # so it's stored in the clear and indexed for fast exact lookups.
     external_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    # Blind index of the last name alone, deliberately NOT unique: it's
+    # what lets a lookup see every participant sharing a surname, so a
+    # name can be resolved against the whole family rather than against
+    # whichever record happens to hold the plain `name_index` slot.
+    last_name_index: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
 
     rate_rules: Mapped[list["RateRule"]] = relationship(back_populates="participant")

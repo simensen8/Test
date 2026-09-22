@@ -5,10 +5,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import COOKIE_SECURE, SESSION_ABSOLUTE_TIMEOUT_HOURS
 from app.db import Base, engine
+from app.migrations import run_migrations
 from app.routers import account, admin, auth, batches, dashboard, rate_master, reports, uploads
 from app.security import SESSION_COOKIE_NAME, refresh_session_token
 
+# create_all builds any wholly new table (and a fresh database in full);
+# the migrations then add columns to tables that already existed, which
+# create_all leaves alone. On a fresh database they find nothing to do.
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 app = FastAPI(title="Adult Day Program Billing Reconciliation", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

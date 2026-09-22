@@ -80,80 +80,119 @@ def _first_names_compatible(a: str, b: str) -> bool:
     return False
 
 
+def _first_name_similarity(a: str, b: str) -> float:
+    """How alike two first-name tokens are, used only to rank candidates
+    that are already considered compatible."""
+    if not a or not b:
+        return 50.0  # a record with no first name is a weak but real candidate
+    if a == b:
+        return 100.0
+    return float(fuzz.ratio(a, b))
+
+
+def find_candidates_by_last_name(db: Session, last_name: str) -> list[Participant]:
+    """Every participant sharing this surname.
+
+    Same-surname people are stored under different `name_index` values
+    (the second one gets a composite index so it can't collide with the
+    first), which makes them invisible to a lookup by name_index alone.
+    `last_name_index` is the non-unique index that keeps the whole family
+    findable -- without it, a name resolves against whichever record
+    happens to hold the plain slot, which is how one sister's billing
+    ended up on the other's record.
+    """
+    idx = blind_index(last_name)
+    candidates = list(db.scalars(select(Participant).where(Participant.last_name_index == idx)))
+    if candidates:
+        return candidates
+    # Records created before last_name_index existed (or by a caller that
+    # didn't set it) are still reachable by the plain index.
+    legacy = db.scalar(select(Participant).where(Participant.name_index == idx))
+    return [legacy] if legacy else []
+
+
+def _best_compatible(candidates: list[Participant], first_name: str) -> Participant | None:
+    """The candidate whose first name best fits, or None if none fits."""
+    compatible = [
+        (p, _first_name_similarity(_first_name_token(p.full_name), first_name))
+        for p in candidates
+        if _first_names_compatible(_first_name_token(p.full_name), first_name)
+    ]
+    if not compatible:
+        return None
+    return max(compatible, key=lambda pair: pair[1])[0]
+
+
 def get_or_create_participant(db: Session, raw_name: str) -> tuple[Participant, bool, str | None]:
     """Deterministic (non-fuzzy) match/create, used for the authoritative
     roster sources (weekly attendance, rate master). Returns
     (participant, created, warning).
 
-    Matching priority: exact external ID (e.g. "PAM-6") match, then
-    exact last-name match IF the first names look compatible (same,
-    blank, or a nickname-style prefix of each other), else a new,
-    separate record.
+    Matching priority: exact external ID (e.g. "PAM-6"), then the
+    same-surname participant whose first name is compatible (same,
+    blank, or a nickname-style variant), else a new, separate record.
 
-    Real rosters do have distinct participants sharing a last name
-    (e.g. two "Goldstein"s, or a "Johnson, Alexander" and a "Johnson,
-    Fran"). Silently merging those into one identity by last name alone
-    would corrupt whichever one's attendance/billing data got
-    overwritten second -- worse than the alternative. So an incompatible
-    same-surname row always gets its OWN record (disambiguated by
-    external ID when available, otherwise by the full name text), never
-    merged into an existing, differently-named one. A warning is
-    returned either way so a human can confirm the split was right (or
-    merge them back via the participant's display name if it turns out
-    to be the same person recorded two different ways)."""
+    Real rosters do have distinct participants sharing a last name (two
+    "Goldstein"s, or a "Johnson, Alexander" and a "Johnson, Fran").
+    Silently merging those into one identity would corrupt whichever
+    one's attendance or billing was written second, so an incompatible
+    same-surname row always gets its own record -- with a warning, so a
+    human can confirm the split was right.
+    """
     clean_name, external_id = split_external_id(raw_name)
     last_name = extract_last_name(clean_name)
     plain_idx = blind_index(last_name)
     new_first = _first_name_token(clean_name)
 
+    def enrich(participant: Participant) -> Participant:
+        if external_id and not participant.external_id:
+            participant.external_id = external_id
+        if len(clean_name) > len(participant.full_name.strip()):
+            participant.full_name = clean_name
+        if not participant.last_name_index:
+            participant.last_name_index = plain_idx
+        return participant
+
     if external_id:
         existing = db.scalar(select(Participant).where(Participant.external_id == external_id))
         if existing:
-            if len(clean_name) > len(existing.full_name.strip()):
-                existing.full_name = clean_name
-            return existing, False, None
+            return enrich(existing), False, None
 
-    # A prior ambiguous, ID-less occurrence of this exact name would have
-    # been filed under a composite index -- check there before assuming
-    # this is a brand new person.
-    composite_idx = blind_index(f"{last_name}|{normalize(clean_name)}")
-    existing = db.scalar(select(Participant).where(Participant.name_index == composite_idx))
-    if existing:
-        if external_id and not existing.external_id:
-            existing.external_id = external_id
-        return existing, False, None
+    candidates = find_candidates_by_last_name(db, last_name)
+    # A candidate carrying a different facility ID is definitively
+    # someone else, however alike the names look.
+    eligible = [c for c in candidates if not (external_id and c.external_id and c.external_id != external_id)]
 
-    existing = db.scalar(select(Participant).where(Participant.name_index == plain_idx))
-    if existing is None:
-        participant = Participant(full_name=clean_name, name_index=plain_idx, external_id=external_id)
-        db.add(participant)
-        db.flush()
-        return participant, True, None
+    match = _best_compatible(eligible, new_first)
+    if match is not None:
+        return enrich(match), False, None
 
-    existing_first = _first_name_token(existing.full_name)
-    same_id_or_unresolvable_conflict = existing.external_id and external_id and existing.external_id != external_id
-    if same_id_or_unresolvable_conflict or not _first_names_compatible(existing_first, new_first):
-        disambiguator = external_id or normalize(clean_name)
-        participant = Participant(
-            full_name=clean_name, name_index=blind_index(f"{last_name}|{disambiguator}"), external_id=external_id,
+    # Nobody fits: a new person. The plain index is the surname slot --
+    # the first arrival takes it, later same-surname people get a
+    # composite one so the unique constraint doesn't collide them.
+    taken = db.scalar(select(Participant).where(Participant.name_index == plain_idx))
+    name_index = plain_idx if taken is None else blind_index(
+        f"{last_name}|{external_id or normalize(clean_name)}"
+    )
+    participant = Participant(
+        full_name=clean_name, name_index=name_index,
+        external_id=external_id, last_name_index=plain_idx,
+    )
+    db.add(participant)
+    db.flush()
+
+    # A split backed by two different facility IDs is a fact, not a
+    # judgement call, so it needs no confirmation from anyone.
+    ids_settle_it = bool(external_id) and all(c.external_id for c in candidates)
+    warning = None
+    if candidates and not ids_settle_it:
+        others = ", ".join(f"'{c.full_name}'" for c in candidates[:3])
+        warning = (
+            f"'{clean_name}' shares the last name '{last_name.title()}' with {others} but doesn't "
+            f"look like the same person -- kept as a separate participant. Please confirm in the "
+            f"roster, and merge them if they are one person recorded two ways."
         )
-        db.add(participant)
-        db.flush()
-        warning = None
-        if not external_id or not existing.external_id:
-            warning = (
-                f"'{clean_name}' and '{existing.full_name}' both share the last name "
-                f"'{last_name.title()}' but don't look like the same person -- kept as separate "
-                f"participants; please confirm in the roster (merge them by editing a display "
-                f"name if they're actually one person)."
-            )
-        return participant, True, warning
-
-    if external_id and not existing.external_id:
-        existing.external_id = external_id
-    if len(clean_name) > len(existing.full_name.strip()):
-        existing.full_name = clean_name
-    return existing, False, None
+    return participant, True, warning
 
 
 @dataclass
@@ -164,11 +203,17 @@ class FuzzyMatchResult:
 
 
 def fuzzy_find_participant(db: Session, raw_name: str) -> FuzzyMatchResult:
-    """Best-effort match for a name appearing on a PCC batch against the
-    known participant roster. Never creates a new participant -- an
-    unmatched billing row should surface as an exception for human
-    review rather than silently mint a new identity from a possible OCR
-    or spelling variant."""
+    """Best-effort match for a name on a PCC batch against the known
+    roster. Never creates a participant -- an unmatched billing row
+    should surface as an exception for a human rather than silently mint
+    a new identity from a spelling variant.
+
+    It resolves the same way `get_or_create_participant` does, and that
+    matters: when it didn't, a batch row for one of two same-surname
+    participants attached to whichever of them held the plain surname
+    slot. One sister then read as billed-but-absent and the other as
+    attended-but-unbilled -- two exceptions, on a day that was correct.
+    """
     clean_name, external_id = split_external_id(raw_name)
 
     if external_id:
@@ -177,10 +222,21 @@ def fuzzy_find_participant(db: Session, raw_name: str) -> FuzzyMatchResult:
             return FuzzyMatchResult(participant=exact, score=100.0, candidate_name=exact.full_name)
 
     last_name = extract_last_name(clean_name)
-    idx = blind_index(last_name)
-    exact = db.scalar(select(Participant).where(Participant.name_index == idx))
-    if exact:
-        return FuzzyMatchResult(participant=exact, score=100.0, candidate_name=exact.full_name)
+    first_name = _first_name_token(clean_name)
+
+    candidates = find_candidates_by_last_name(db, last_name)
+    if candidates:
+        match = _best_compatible(candidates, first_name)
+        if match is not None:
+            return FuzzyMatchResult(participant=match, score=100.0, candidate_name=match.full_name)
+        # Same surname, no first name that fits: near-misses are named
+        # in the result so the review screen can show what it nearly
+        # matched, but the row stays unmatched for a human to settle.
+        nearest = max(
+            candidates,
+            key=lambda c: _first_name_similarity(_first_name_token(c.full_name), first_name),
+        )
+        return FuzzyMatchResult(participant=None, score=0.0, candidate_name=nearest.full_name)
 
     best: Participant | None = None
     best_score = 0.0
@@ -189,6 +245,8 @@ def fuzzy_find_participant(db: Session, raw_name: str) -> FuzzyMatchResult:
         if score > best_score:
             best_score, best = score, participant
 
-    if best and best_score >= FUZZY_MATCH_THRESHOLD:
+    if best and best_score >= FUZZY_MATCH_THRESHOLD and _first_names_compatible(
+        _first_name_token(best.full_name), first_name
+    ):
         return FuzzyMatchResult(participant=best, score=best_score, candidate_name=best.full_name)
     return FuzzyMatchResult(participant=None, score=best_score, candidate_name=best.full_name if best else None)
