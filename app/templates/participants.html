@@ -32,7 +32,7 @@
 
 <div class="panel">
   <table>
-    <thead><tr><th>Name</th><th>PCC ID</th><th>Status</th><th>How they're billed</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>PCC ID</th><th>Status</th><th>Expected days</th><th>How they're billed</th><th></th></tr></thead>
     <tbody>
       {% for person in people %}
       <tr>
@@ -47,6 +47,10 @@
           {% if person.status.value == 'active' %}<span class="badge badge-ok">active</span>
           {% elif person.status.value == 'trial' %}<span class="badge badge-warn">trial</span>
           {% else %}<span class="badge badge-muted">discharged</span>{% endif %}
+        </td>
+        <td data-label="Expected days">
+          {% set schedule = schedules_by_participant.get(person.id) %}
+          {% if schedule %}{{ schedule.describe() }}{% else %}<span class="muted">—</span>{% endif %}
         </td>
         <td data-label="Billing">
           {% set rules = rules_by_participant.get(person.id) or [] %}
@@ -63,7 +67,7 @@
         <td><a href="/participants/{{ person.id }}">Open</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="5" class="muted">No participants match. Upload an attendance sheet or a PCC batch to build the roster.</td></tr>
+      <tr><td colspan="6" class="muted">No participants match. Upload an attendance sheet or a PCC batch to build the roster.</td></tr>
       {% endfor %}
     </tbody>
   </table>

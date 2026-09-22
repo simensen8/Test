@@ -86,6 +86,7 @@ class Participant(Base):
 
     rate_rules: Mapped[list["RateRule"]] = relationship(back_populates="participant")
     attendance_records: Mapped[list["AttendanceRecord"]] = relationship(back_populates="participant")
+    schedules: Mapped[list["AttendanceSchedule"]] = relationship(back_populates="participant")
     billing_records: Mapped[list["BillingRecord"]] = relationship(back_populates="participant")
 
 
@@ -157,10 +158,21 @@ class Upload(Base):
     parse_warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AttendanceSource(str, enum.Enum):
+    UPLOAD = "upload"      # transcribed from the paper sheet, then uploaded
+    CHECK_IN = "check_in"  # recorded in the app on the day
+
+
 class AttendanceRecord(Base):
-    """One participant's attendance status for one day, sourced from the
-    Weekly Attendance Excel (which is itself a transcription of the paper
-    sign-in sheet)."""
+    """One participant's attendance status for one day.
+
+    It comes either from the Weekly Attendance workbook (itself a
+    transcription of the paper sign-in sheet) or from the check-in
+    screen. Either way it is the same fact, and reconciliation reads it
+    the same way -- but who recorded it, and how, is worth keeping:
+    the paper sheet remains the signed record the state inspects, and a
+    check-in mark is an app action that belongs in the audit trail.
+    """
 
     __tablename__ = "attendance_records"
     __table_args__ = (UniqueConstraint("participant_id", "date", name="uq_attendance_participant_date"),)
@@ -169,9 +181,66 @@ class AttendanceRecord(Base):
     participant_id: Mapped[str] = mapped_column(String(36), ForeignKey("participants.id"))
     date: Mapped[datetime.date] = mapped_column(Date, index=True)
     attended: Mapped[bool] = mapped_column(Boolean)
-    source_upload_id: Mapped[str] = mapped_column(String(36), ForeignKey("uploads.id"))
+    source: Mapped[AttendanceSource] = mapped_column(
+        Enum(AttendanceSource), default=AttendanceSource.UPLOAD, server_default="UPLOAD",
+    )
+    # Set for an uploaded sheet, empty for a check-in.
+    source_upload_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("uploads.id"), nullable=True,
+    )
+    recorded_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    recorded_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     participant: Mapped[Participant] = relationship(back_populates="attendance_records")
+
+
+class AttendanceSchedule(Base):
+    """Which days of the week a participant is expected to attend.
+
+    Adult day programs enroll people on a pattern -- "Mondays,
+    Wednesdays and Fridays" -- and the pattern is what makes a one-click
+    check-in possible: the screen can list who is expected today instead
+    of asking staff to find each person in the whole roster. It also
+    separates an unexpected absence from a day someone was never
+    scheduled for.
+    """
+
+    __tablename__ = "attendance_schedules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    participant_id: Mapped[str] = mapped_column(String(36), ForeignKey("participants.id"), index=True)
+    # Python's weekday numbering: Monday is 0. Stored as a sorted
+    # comma-separated list ("0,2,4") rather than seven columns or seven
+    # rows -- it is read and written whole, never queried by one day.
+    days_of_week: Mapped[str] = mapped_column(String(32), default="")
+    effective_start: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    effective_end: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(EncryptedString(1000), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
+
+    participant: Mapped[Participant] = relationship(back_populates="schedules")
+
+    WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+    @property
+    def weekdays(self) -> list[int]:
+        return [int(d) for d in self.days_of_week.split(",") if d.strip().isdigit()]
+
+    def covers(self, day: datetime.date) -> bool:
+        if not self.active:
+            return False
+        if self.effective_start and day < self.effective_start:
+            return False
+        if self.effective_end and day > self.effective_end:
+            return False
+        return day.weekday() in self.weekdays
+
+    def describe(self) -> str:
+        days = self.weekdays
+        if not days:
+            return "No scheduled days"
+        return ", ".join(self.WEEKDAY_NAMES[d][:3] for d in days)
 
 
 class BillingRecord(Base):

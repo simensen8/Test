@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Check-in{% endblock %}
+{% block content %}
+<h1 style="margin-bottom:.25rem;">Check-in</h1>
+<p class="muted">
+  {{ day.strftime('%A, %B %-d, %Y') }}{% if day == today %} &middot; today{% endif %}
+  &nbsp;|&nbsp;
+  <a href="/check-in?day={{ previous_day }}">&larr; Previous day</a>
+  {% if day != today %}<a href="/check-in" style="margin-left:.5rem;">Today</a>{% endif %}
+  <a href="/check-in?day={{ next_day }}" style="margin-left:.5rem;">Next day &rarr;</a>
+</p>
+
+<div class="panel" style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:center;">
+  <div>
+    <div style="font-size:2rem;font-weight:700;line-height:1;">{{ present }}</div>
+    <div class="muted">present</div>
+  </div>
+  <div>
+    <div style="font-size:2rem;font-weight:700;line-height:1;">{{ absent }}</div>
+    <div class="muted">out</div>
+  </div>
+  <div>
+    <div style="font-size:2rem;font-weight:700;line-height:1;">{{ unmarked }}</div>
+    <div class="muted">not yet marked</div>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap;">
+    {% if unmarked %}
+    <form method="post" action="/check-in/mark-rest-present"
+          onsubmit="return confirm('Mark the remaining {{ unmarked }} scheduled participant(s) present? Marks already made are left alone.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="day" value="{{ day.isoformat() }}">
+      <button type="submit">Mark the rest present</button>
+    </form>
+    <a href="/check-in?day={{ day.isoformat() }}&show=unmarked"><button type="button" class="secondary">Show only unmarked</button></a>
+    {% endif %}
+    {% if show %}<a href="/check-in?day={{ day.isoformat() }}"><button type="button" class="secondary">Show everyone</button></a>{% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Participant</th><th>Status</th><th style="width:1%;white-space:nowrap;">Mark</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr id="p-{{ row.participant.id }}">
+        <td data-label="Participant">
+          <a href="/participants/{{ row.participant.id }}">{{ row.participant.full_name }}</a>
+          {% if not row.scheduled %}<span class="badge badge-muted" title="Not on today's schedule">drop-in</span>{% endif %}
+          {% if row.participant.status.value == 'trial' %}<span class="badge badge-warn">trial</span>{% endif %}
+        </td>
+        <td data-label="Status">
+          {% if row.record and row.record.attended %}<span class="badge badge-ok">present</span>
+          {% elif row.record %}<span class="badge badge-danger">out</span>
+          {% else %}<span class="muted">not yet marked</span>{% endif %}
+        </td>
+        <td>
+          <div style="display:flex;gap:.4rem;">
+            {% for value, label, is_current in [
+                 ('present', 'Present', row.record and row.record.attended),
+                 ('absent', 'Out', row.record and not row.record.attended)] %}
+            <form method="post" action="/check-in/mark">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="participant_id" value="{{ row.participant.id }}">
+              <input type="hidden" name="day" value="{{ day.isoformat() }}">
+              <input type="hidden" name="show" value="{{ show }}">
+              <input type="hidden" name="attended" value="{{ value }}">
+              <button type="submit" {% if is_current %}disabled title="Already marked {{ label|lower }}"{% elif value == 'absent' %}class="secondary"{% endif %}>{{ label }}</button>
+            </form>
+            {% endfor %}
+            {% if row.record %}
+            <form method="post" action="/check-in/mark">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="participant_id" value="{{ row.participant.id }}">
+              <input type="hidden" name="day" value="{{ day.isoformat() }}">
+              <input type="hidden" name="show" value="{{ show }}">
+              <input type="hidden" name="attended" value="clear">
+              <button type="submit" class="secondary" title="Undo this mark">Undo</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="3" class="muted">
+          {% if show == 'unmarked' %}
+            Everyone scheduled today has been marked.
+          {% else %}
+            Nobody is scheduled for {{ day.strftime('%A') }}s yet. Set expected days on a
+            <a href="/participants">participant's profile</a>, or add someone below.
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if addable %}
+<div class="panel">
+  <h2 style="margin-top:0;">Someone here who isn't on today's list</h2>
+  <p class="muted">Marks them for {{ day.strftime('%A, %B %-d') }} without changing their schedule.</p>
+  <form method="post" action="/check-in/mark">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="day" value="{{ day.isoformat() }}">
+    <input type="hidden" name="attended" value="present">
+    <label for="drop_in">Participant</label>
+    <select id="drop_in" name="participant_id">
+      {% for person in addable %}
+      <option value="{{ person.id }}">{{ person.full_name }}</option>
+      {% endfor %}
+    </select>
+    <div style="margin-top:1rem;"><button type="submit">Mark present</button></div>
+  </form>
+</div>
+{% endif %}
+
+<p class="muted">
+  The paper sign-in sheet is still the signed record the state inspects &mdash; this records the same
+  facts faster, and every mark and change is logged with who made it.
+</p>
+{% endblock %}

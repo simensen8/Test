@@ -40,20 +40,31 @@ payer source*, never *incorrect rate*.
    M/D/YYYY" line, falling back to the rows' Eff. Date -- so there is no
    date to key in. A file whose date can't be read is refused rather
    than guessed at, and uploading a day again replaces that day.
-2. **Check the roster** (`/participants`) when a name looks wrong. Every
+2. **Record attendance** either way. The check-in screen (`/check-in`)
+   lists everyone scheduled for the day; marking someone present or out
+   is one click, and correcting a mark is the same click. Nobody is
+   present by default -- an unmarked participant is unrecorded, not
+   assumed to have attended -- and "mark the rest present" fills in
+   blanks only, never changing a mark someone made. Expected days are
+   set per participant on their profile. The Weekly Attendance workbook
+   still works and takes precedence for any day it covers: the paper
+   sign-in sheet remains the signed record the state inspects.
+   `/calendar` shows the month at a glance, and each profile has its own
+   month view.
+3. **Check the roster** (`/participants`) when a name looks wrong. Every
    participant uploads have seen has a profile: canonical name, PCC ID,
    status (active/trial/discharged), notes, and how they're billed. Two
    records that turn out to be one person are merged there, which moves
    their attendance, billing and payer rule onto a single record.
-3. **Review** the auto-extracted batch rows (`/batches/<date>/review`)
+4. **Review** the auto-extracted batch rows (`/batches/<date>/review`)
    and correct/confirm them -- extraction is a best-effort parser, not
    ground truth, so every row must be verified before it can feed
    reconciliation.
-4. **Reconcile** the day. The exception report (`/reports/<date>`) shows
+5. **Reconcile** the day. The exception report (`/reports/<date>`) shows
    participant, date, expected billing, actual PCC billing, and the
    reason for every discrepancy, with room to record how it was
    resolved. Zero exceptions renders as "Reconciled / No Exceptions."
-5. **Export** a CSV of the exception report for finance/compliance
+6. **Export** a CSV of the exception report for finance/compliance
    recordkeeping.
 
 ## Local setup

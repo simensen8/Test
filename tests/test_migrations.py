@@ -13,6 +13,16 @@ from app.db import Base, engine
 from app.migrations import run_migrations
 from app.models import Participant
 
+OLD_ATTENDANCE_SCHEMA = """
+CREATE TABLE attendance_records (
+    id VARCHAR(36) NOT NULL PRIMARY KEY,
+    participant_id VARCHAR(36) NOT NULL REFERENCES participants (id),
+    date DATE NOT NULL,
+    attended BOOLEAN NOT NULL,
+    source_upload_id VARCHAR(36) NOT NULL REFERENCES uploads (id),
+    CONSTRAINT uq_attendance_participant_date UNIQUE (participant_id, date)
+)"""
+
 OLD_SCHEMA = """
 CREATE TABLE participants (
     id VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -76,3 +86,73 @@ def test_running_them_again_changes_nothing(legacy_db):
 
     with Session(engine) as session:
         assert len(session.scalars(select(Participant)).all()) == 1
+
+
+# ------------------------------------------------- attendance records ----
+
+@pytest.fixture()
+def legacy_attendance_db():
+    """A database whose attendance rows must each point at an upload."""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE attendance_records"))
+        conn.execute(text(OLD_ATTENDANCE_SCHEMA))
+    yield
+    Base.metadata.drop_all(bind=engine)
+
+
+def _legacy_attendance_row(session, participant, upload_id):
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO attendance_records (id, participant_id, date, attended, source_upload_id) "
+                 "VALUES ('a1', :pid, '2026-09-10', 1, :uid)"),
+            {"pid": participant.id, "uid": upload_id},
+        )
+
+
+def test_attendance_can_stand_without_an_upload_afterwards(legacy_attendance_db):
+    """A check-in has no upload behind it, so the column has to become
+    optional -- without losing the rows that do have one."""
+    import datetime
+
+    from app.models import AttendanceRecord, AttendanceSource, Role, Upload, UploadKind, User
+    from app.security import hash_password
+
+    with Session(engine) as session:
+        user = User(email="m@example.org", display_name="M",
+                    password_hash=hash_password("x" * 12), role=Role.ADMIN)
+        participant = Participant(full_name="Adams, Alice", name_index=blind_index("adams"),
+                                  last_name_index=blind_index("adams"))
+        session.add_all([user, participant])
+        session.flush()
+        upload = Upload(kind=UploadKind.WEEKLY_ATTENDANCE, original_filename="f", stored_path="",
+                        uploaded_by_id=user.id)
+        session.add(upload)
+        session.commit()
+        participant_id, upload_id, user_id = participant.id, upload.id, user.id
+        _legacy_attendance_row(session, participant, upload_id)
+
+    run_migrations()
+
+    with Session(engine) as session:
+        carried = session.scalar(select(AttendanceRecord))
+        assert carried.source_upload_id == upload_id, "the uploaded day survives the rebuild"
+        assert carried.source == AttendanceSource.UPLOAD
+
+        session.add(AttendanceRecord(
+            participant_id=participant_id, date=datetime.date(2026, 9, 11), attended=True,
+            source=AttendanceSource.CHECK_IN, recorded_by_id=user_id,
+            recorded_at=datetime.datetime.utcnow(),
+        ))
+        session.commit()
+        assert len(session.scalars(select(AttendanceRecord)).all()) == 2
+
+
+def test_the_attendance_rebuild_runs_once(legacy_attendance_db):
+    run_migrations()
+    run_migrations()
+
+    from app.models import AttendanceRecord  # noqa: F401
+    with Session(engine) as session:
+        assert session.scalars(select(AttendanceRecord)).all() == []

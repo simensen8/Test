@@ -11,6 +11,7 @@ from app.flash import set_flash
 from app.matching import get_or_create_participant
 from app.models import (
     AttendanceRecord,
+    AttendanceSource,
     BillingRecord,
     Exception_,
     GrantRuleType,
@@ -127,11 +128,20 @@ async def upload_attendance(
                 )
             )
             if existing:
+                # The uploaded sheet is the transcription of the signed
+                # paper record, so it wins over a check-in mark for the
+                # same day -- and the row records that it came from the
+                # sheet, not from whoever last touched the screen.
                 existing.attended = attended
+                existing.source = AttendanceSource.UPLOAD
                 existing.source_upload_id = upload.id
+                existing.recorded_by_id = user.id
+                existing.recorded_at = datetime.datetime.utcnow()
             else:
                 db.add(AttendanceRecord(
-                    participant_id=participant.id, date=day, attended=attended, source_upload_id=upload.id,
+                    participant_id=participant.id, date=day, attended=attended,
+                    source=AttendanceSource.UPLOAD, source_upload_id=upload.id,
+                    recorded_by_id=user.id, recorded_at=datetime.datetime.utcnow(),
                 ))
 
     all_warnings = result.warnings + ambiguous_warnings

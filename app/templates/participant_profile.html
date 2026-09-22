@@ -125,6 +125,47 @@
   </div>
 </div>
 
+<div class="panel">
+  <h2 style="margin-top:0;">Expected days</h2>
+  <p class="muted">
+    {% if schedule %}Currently expected on <strong>{{ schedule.describe() }}</strong>.
+    {% else %}No set schedule, so this participant isn't on any day's check-in list until they're added to it.
+    {% endif %}
+    Setting a schedule is what puts someone on the check-in screen for those days.
+  </p>
+  <form method="post" action="/participants/{{ participant.id }}/schedule">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">
+      {% for name in weekday_names %}
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:500;">
+        <input type="checkbox" name="weekday" value="{{ loop.index0 }}" style="width:auto;margin:0;"
+               {% if schedule and loop.index0 in schedule.weekdays %}checked{% endif %}>
+        {{ name }}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="grid-2">
+      <div>
+        <label for="schedule_start">From (optional)</label>
+        <input type="date" id="schedule_start" name="effective_start"
+               value="{{ schedule.effective_start.isoformat() if schedule and schedule.effective_start else '' }}">
+      </div>
+      <div>
+        <label for="schedule_end">Until (optional)</label>
+        <input type="date" id="schedule_end" name="effective_end"
+               value="{{ schedule.effective_end.isoformat() if schedule and schedule.effective_end else '' }}">
+      </div>
+    </div>
+    <label for="schedule_notes">Notes</label>
+    <input type="text" id="schedule_notes" name="notes" value="{{ schedule.notes if schedule and schedule.notes else '' }}"
+           placeholder="e.g. arrives after 10am on Wednesdays">
+    <div style="margin-top:1rem;">
+      <button type="submit">Save schedule</button>
+      <span class="muted" style="margin-left:.75rem;">Unticking every day takes them off the schedule.</span>
+    </div>
+  </form>
+</div>
+
 <datalist id="payers">
   {% for payer in payer_options %}<option value="{{ payer }}">{% endfor %}
 </datalist>
@@ -162,6 +203,7 @@
 <div class="grid-2">
   <div class="panel">
     <h2 style="margin-top:0;">Attendance, last {{ recent_days }} days</h2>
+    <p class="muted" style="margin-top:-.5rem;"><a href="/participants/{{ participant.id }}/calendar">See the month view &rarr;</a></p>
     {% if attendance %}
     <table>
       <thead><tr><th>Date</th><th>Attended</th></tr></thead>

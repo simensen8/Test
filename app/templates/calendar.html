@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block content %}
+<h1 style="margin-bottom:.25rem;">{{ title }}</h1>
+<p class="muted">
+  <a href="/calendar?month={{ previous_month }}">&larr; {{ previous_month }}</a>
+  <a href="/calendar" style="margin:0 .5rem;">This month</a>
+  <a href="/calendar?month={{ next_month }}">{{ next_month }} &rarr;</a>
+</p>
+
+<div class="panel">
+  <table class="calendar">
+    <thead><tr>{% for name in weekday_names %}<th>{{ name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for week in weeks %}
+      <tr>
+        {% for day in week %}
+        {% set cell = cells.get(day) %}
+        <td class="{% if day.month != month_number %}outside{% endif %}{% if cell and cell.is_today %} today{% endif %}">
+          {% if day.month == month_number %}
+          <div class="daynum">
+            {% if cell.expected or cell.present or cell.absent %}
+              <a href="/check-in?day={{ day.isoformat() }}">{{ day.day }}</a>
+            {% else %}{{ day.day }}{% endif %}
+          </div>
+          {% if cell.present or cell.absent %}
+            <div class="cell-note"><strong>{{ cell.present }}</strong> here{% if cell.absent %}, {{ cell.absent }} out{% endif %}</div>
+          {% elif cell.expected and not cell.is_future %}
+            <div class="cell-note">{{ cell.expected }} expected, none marked</div>
+          {% elif cell.expected %}
+            <div class="cell-note">{{ cell.expected }} scheduled</div>
+          {% endif %}
+          {% if cell.run %}
+            {% if cell.open_exceptions %}
+              <div class="cell-note">
+                <a href="/reports/{{ day.isoformat() }}"><span class="badge badge-danger">{{ cell.open_exceptions }} open</span></a>
+              </div>
+            {% else %}
+              <div class="cell-note">
+                <a href="/reports/{{ day.isoformat() }}"><span class="badge badge-ok">reconciled</span></a>
+              </div>
+            {% endif %}
+          {% elif cell.has_batch %}
+            <div class="cell-note"><a href="/batches/{{ day.isoformat() }}/review"><span class="badge badge-warn">batch to review</span></a></div>
+          {% endif %}
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="muted">
+  A day's number links to its check-in screen. <span class="badge badge-warn">batch to review</span> means a
+  PCC batch is loaded but its rows haven't been verified;
+  <span class="badge badge-ok">reconciled</span> means the day ran clean.
+</p>
+{% endblock %}

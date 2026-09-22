@@ -303,3 +303,74 @@ def test_removing_the_rule_falls_back_to_private_pay(client, db_session):
 
     db_session.expire_all()
     assert compute_expected_billing(db_session, person.id, DAY).payer == "Private Pay"
+
+
+# ----------------------------------------------------------- schedule ----
+
+def test_a_schedule_set_on_the_profile_drives_the_check_in_list(client, db_session):
+    from app.models import AttendanceSchedule
+    from app.routers.checkin import scheduled_participants
+
+    person, _, _ = get_or_create_participant(db_session, "Adams, Alice")
+    db_session.commit()
+
+    client.post(f"/participants/{person.id}/schedule", data={
+        "csrf_token": _csrf(client, f"/participants/{person.id}"),
+        "weekday": ["0", "2", "4"], "effective_start": "", "effective_end": "", "notes": "",
+    }, follow_redirects=False)
+
+    db_session.expire_all()
+    schedule = db_session.scalar(select(AttendanceSchedule))
+    assert schedule.days_of_week == "0,2,4"
+    assert schedule.describe() == "Mon, Wed, Fri"
+
+    monday = datetime.date(2026, 9, 7)
+    assert [p.id for p in scheduled_participants(db_session, monday)] == [person.id]
+    assert scheduled_participants(db_session, monday + datetime.timedelta(days=1)) == []
+
+
+def test_unticking_every_day_takes_someone_off_the_schedule(client, db_session):
+    from app.models import AttendanceSchedule
+    from app.routers.checkin import scheduled_participants
+
+    person, _, _ = get_or_create_participant(db_session, "Adams, Alice")
+    db_session.add(AttendanceSchedule(participant_id=person.id, days_of_week="0,1,2,3,4"))
+    db_session.commit()
+
+    client.post(f"/participants/{person.id}/schedule", data={
+        "csrf_token": _csrf(client, f"/participants/{person.id}"),
+        "effective_start": "", "effective_end": "", "notes": "",
+    }, follow_redirects=False)
+
+    db_session.expire_all()
+    assert scheduled_participants(db_session, datetime.date(2026, 9, 7)) == []
+
+
+def test_a_schedule_only_applies_inside_its_effective_dates(client, db_session):
+    from app.routers.checkin import scheduled_participants
+
+    person, _, _ = get_or_create_participant(db_session, "Adams, Alice")
+    db_session.commit()
+
+    client.post(f"/participants/{person.id}/schedule", data={
+        "csrf_token": _csrf(client, f"/participants/{person.id}"),
+        "weekday": ["0"], "effective_start": "2026-09-07", "effective_end": "2026-09-07", "notes": "",
+    }, follow_redirects=False)
+
+    db_session.expire_all()
+    assert len(scheduled_participants(db_session, datetime.date(2026, 9, 7))) == 1
+    assert scheduled_participants(db_session, datetime.date(2026, 9, 14)) == []
+
+
+def test_a_backwards_schedule_range_is_refused(client, db_session):
+    from app.models import AttendanceSchedule
+
+    person, _, _ = get_or_create_participant(db_session, "Adams, Alice")
+    db_session.commit()
+
+    client.post(f"/participants/{person.id}/schedule", data={
+        "csrf_token": _csrf(client, f"/participants/{person.id}"),
+        "weekday": ["0"], "effective_start": "2026-09-30", "effective_end": "2026-09-01", "notes": "",
+    }, follow_redirects=False)
+
+    assert db_session.scalars(select(AttendanceSchedule)).all() == []

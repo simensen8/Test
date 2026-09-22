@@ -20,6 +20,7 @@ from app.flash import set_flash
 from app.matching import extract_last_name, get_or_create_participant, normalize
 from app.models import (
     AttendanceRecord,
+    AttendanceSchedule,
     BillingRecord,
     Exception_,
     GrantRuleType,
@@ -42,6 +43,19 @@ def _roster(db: Session) -> list[Participant]:
     hundred people at most, and the database must not hold a sortable
     plaintext copy of them."""
     return sorted(db.scalars(select(Participant)).all(), key=lambda p: normalize(p.full_name))
+
+
+def active_schedule(db: Session, participant_id: str) -> AttendanceSchedule | None:
+    """The schedule in force for a participant, if any. A participant
+    with none is simply not expected on any particular day -- they can
+    still be checked in, they just aren't on the day's list."""
+    schedules = db.scalars(
+        select(AttendanceSchedule).where(
+            AttendanceSchedule.participant_id == participant_id,
+            AttendanceSchedule.active == True,  # noqa: E712
+        )
+    ).all()
+    return schedules[-1] if schedules else None
 
 
 def _active_rules(db: Session, participant_id: str) -> list[RateRule]:
@@ -67,9 +81,11 @@ def roster(
         people = [p for p in people if p.status.value == status]
 
     rules_by_participant = {}
+    schedules_by_participant = {}
     duplicate_surnames: dict[str, int] = {}
     for person in people:
         rules_by_participant[person.id] = _active_rules(db, person.id)
+        schedules_by_participant[person.id] = active_schedule(db, person.id)
     for person in _roster(db):
         key = extract_last_name(person.full_name)
         duplicate_surnames[key] = duplicate_surnames.get(key, 0) + 1
@@ -78,6 +94,7 @@ def roster(
     return render(request, "participants.html", {
         "people": people,
         "rules_by_participant": rules_by_participant,
+        "schedules_by_participant": schedules_by_participant,
         "shared_surnames": {k for k, count in duplicate_surnames.items() if count > 1},
         "statuses": list(ParticipantStatus),
         "q": q,
@@ -173,6 +190,8 @@ def profile(
         "exceptions": exceptions,
         "same_surname": same_surname,
         "recent_days": RECENT_DAYS,
+        "schedule": active_schedule(db, participant_id),
+        "weekday_names": AttendanceSchedule.WEEKDAY_NAMES[:5],
         "payer_options": CANONICAL_CATEGORIES,
         "grant_types": list(GrantRuleType),
         "today": datetime.date.today().isoformat(),
@@ -490,4 +509,69 @@ def remove_rule(
         log_audit(db, user=user, action="deactivate_rate_rule", resource=rule_id, request=request)
     resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
     set_flash(resp, "Billing rule removed -- this participant now defaults to Private Pay.", "success")
+    return resp
+
+
+# ------------------------------------------------------------ schedule ----
+
+@router.post("/participants/{participant_id}/schedule")
+async def set_schedule(
+    participant_id: str,
+    request: Request,
+    csrf_token: str = Depends(verify_csrf),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Set which days of the week a participant is expected.
+
+    The form posts a checkbox per weekday, so the days are read off the
+    form directly -- an unticked box sends nothing, which is how a day
+    gets removed.
+    """
+    participant = db.get(Participant, participant_id)
+    if participant is None:
+        resp = RedirectResponse(url="/participants", status_code=303)
+        set_flash(resp, "That participant no longer exists.", "error")
+        return resp
+
+    form = await request.form()
+    selected = sorted({int(day) for day in form.getlist("weekday") if day.isdigit() and 0 <= int(day) <= 6})
+    starts, ends = form.get("effective_start", ""), form.get("effective_end", "")
+
+    try:
+        start = datetime.date.fromisoformat(starts) if starts else None
+        end = datetime.date.fromisoformat(ends) if ends else None
+    except ValueError:
+        resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+        set_flash(resp, "Those schedule dates aren't valid dates.", "error")
+        return resp
+    if start and end and end < start:
+        resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+        set_flash(resp, "The schedule's end date can't be before its start date.", "error")
+        return resp
+
+    schedule = active_schedule(db, participant_id)
+    if not selected:
+        if schedule:
+            schedule.active = False
+            db.commit()
+            log_audit(db, user=user, action="clear_schedule", resource=participant_id, request=request)
+        resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+        set_flash(resp, f"{participant.full_name} is no longer on a set schedule.", "success")
+        return resp
+
+    if schedule is None:
+        schedule = AttendanceSchedule(participant_id=participant_id)
+        db.add(schedule)
+    schedule.days_of_week = ",".join(str(day) for day in selected)
+    schedule.effective_start = start
+    schedule.effective_end = end
+    schedule.active = True
+    schedule.notes = (form.get("notes") or "").strip() or None
+    db.commit()
+
+    log_audit(db, user=user, action="set_schedule", resource=participant_id, request=request,
+              detail=schedule.describe())
+    resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+    set_flash(resp, f"{participant.full_name} is expected on {schedule.describe()}.", "success")
     return resp
