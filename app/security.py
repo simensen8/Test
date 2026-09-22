@@ -19,6 +19,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _serializer = URLSafeTimedSerializer(SESSION_SECRET_KEY, salt="session-cookie")
 
 SESSION_COOKIE_NAME = "adp_session"
+PASSWORD_CHANGE_PATH = "/account/password"
+# Pages a user with an unchanged temporary password may still reach: the
+# change-password screen itself, and the way out.
+PASSWORD_CHANGE_EXEMPT_PATHS = {PASSWORD_CHANGE_PATH, "/logout"}
 
 
 def hash_password(password: str) -> str:
@@ -98,6 +102,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise unauthorized
     request.state.session_payload = payload
     request.state.needs_refresh = True
+
+    # An account still on the temporary password an admin handed out --
+    # one that has, by definition, been shared with someone -- is held at
+    # the change-password screen rather than let loose on PHI.
+    if user.must_change_password and request.url.path not in PASSWORD_CHANGE_EXEMPT_PATHS:
+        raise HTTPException(
+            status_code=status.HTTP_303_SEE_OTHER, headers={"Location": PASSWORD_CHANGE_PATH}
+        )
     return user
 
 

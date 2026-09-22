@@ -15,6 +15,7 @@
       <a href="/upload">Upload</a>
       <a href="/rate-master">Rate Master</a>
       {% if user.role.value == "admin" %}<a href="/admin/users">Users</a><a href="/admin/audit-log">Audit Log</a>{% endif %}
+      <a href="/account/password">Password</a>
       <span class="muted" style="margin-right:1rem;">{{ user.display_name }}</span>
       <form method="post" action="/logout" style="display:inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

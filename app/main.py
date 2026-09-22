@@ -5,7 +5,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import COOKIE_SECURE, SESSION_ABSOLUTE_TIMEOUT_HOURS
 from app.db import Base, engine
-from app.routers import admin, auth, batches, dashboard, rate_master, reports, uploads
+from app.routers import account, admin, auth, batches, dashboard, rate_master, reports, uploads
 from app.security import SESSION_COOKIE_NAME, refresh_session_token
 
 Base.metadata.create_all(bind=engine)
@@ -14,6 +14,7 @@ app = FastAPI(title="Adult Day Program Billing Reconciliation", docs_url=None, r
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(auth.router)
+app.include_router(account.router)
 app.include_router(dashboard.router)
 app.include_router(uploads.router)
 app.include_router(batches.router)

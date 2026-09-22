@@ -26,6 +26,12 @@
             <button type="submit">Reactivate</button>
           </form>
           {% endif %}
+          <form method="post" action="/admin/users/{{ u.id }}/reset-password" style="margin-top:.5rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="text" name="temp_password" minlength="12" required
+                   placeholder="New temporary password" aria-label="New temporary password for {{ u.display_name }}">
+            <button type="submit" class="secondary">Reset password</button>
+          </form>
         </td>
       </tr>
       {% endfor %}

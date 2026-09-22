@@ -128,6 +128,9 @@ account on first visit.
   to wherever your backup destination is) on a schedule -- this directory
   holds the encrypted database and uploaded source documents.
 - **Updates**: `git pull && docker compose up -d --build`
+- **Forgotten passwords**: an admin issues a new temporary password from
+  `/admin/users` and hands it over in person or by phone (not email).
+  The user is required to change it when they next sign in.
 - **Logs**: `docker compose logs -f app`
 - Caddy renews its own TLS certificate automatically; nothing to do there.
 
@@ -227,7 +230,13 @@ operation, not of a single codebase.** Here's the split:
 - **Access control & authentication.** Password login with bcrypt
   hashing, account lockout after repeated failures, role-based access
   (admin vs. reviewer) gating user management and the audit log,
-  per-user accounts (no shared logins).
+  per-user accounts (no shared logins). A temporary password issued by
+  an admin only gets its holder as far as the change-password screen
+  (`/account/password`); every other page redirects there until they've
+  chosen their own. Admins can issue a new temporary password from
+  `/admin/users` when someone is locked out or has forgotten theirs --
+  there is deliberately no email-based reset, since a reset link sitting
+  in a mailbox is a way into PHI.
 - **Session security.** Signed, HttpOnly, SameSite=Lax session cookies;
   a 20-minute idle timeout and 10-hour absolute timeout (configurable);
   CSRF tokens on every state-changing form.

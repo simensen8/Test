@@ -37,6 +37,9 @@ def client(db_session):
     user = User(
         email="director@example.org", display_name="Director",
         password_hash=hash_password("correct horse battery"), role=Role.ADMIN,
+        # An established account: a user still on their temporary password
+        # is held at the change-password screen (see test_password_change).
+        must_change_password=False,
     )
     db_session.add(user)
     db_session.commit()

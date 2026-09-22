@@ -95,6 +95,47 @@ def reactivate_user(
     return resp
 
 
+@router.post("/admin/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: str,
+    request: Request,
+    temp_password: str = Form(...),
+    csrf_token: str = Depends(verify_csrf),
+    db: Session = Depends(get_db),
+    user=Depends(require_admin),
+):
+    """Give a user a new temporary password.
+
+    Without this, a forgotten password is an unrecoverable lockout: there
+    is no email-based reset (and there shouldn't be -- a reset link in a
+    mailbox is a way into PHI). The new password must be changed on the
+    user's next sign-in, same as a newly created account.
+    """
+    target = db.get(User, user_id)
+    if target is None:
+        resp = RedirectResponse(url="/admin/users", status_code=303)
+        set_flash(resp, "That user no longer exists.", "error")
+        return resp
+    if len(temp_password) < 12:
+        resp = RedirectResponse(url="/admin/users", status_code=303)
+        set_flash(resp, "Temporary password must be at least 12 characters.", "error")
+        return resp
+
+    target.password_hash = hash_password(temp_password)
+    target.must_change_password = True
+    target.failed_login_count = 0
+    target.locked_until = None
+    db.commit()
+
+    log_audit(db, user=user, action="reset_user_password", resource=target.id, request=request,
+              detail=target.email)
+
+    resp = RedirectResponse(url="/admin/users", status_code=303)
+    set_flash(resp, f"Temporary password set for {target.email}. Share it through a secure channel "
+                    "(not email) -- they'll be asked to choose their own password when they sign in.", "success")
+    return resp
+
+
 @router.get("/admin/audit-log")
 def audit_log(request: Request, db: Session = Depends(get_db), user=Depends(require_admin)):
     entries = db.scalars(select(AuditLog).order_by(AuditLog.at.desc()).limit(500)).all()
