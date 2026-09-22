@@ -12,8 +12,10 @@ from app.matching import get_or_create_participant
 from app.models import (
     AttendanceRecord,
     BillingRecord,
+    Exception_,
     GrantRuleType,
     RateRule,
+    ReconciliationRun,
     Upload,
     UploadKind,
 )
@@ -29,6 +31,38 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 ALLOWED_EXCEL_TYPES = {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"}
 ALLOWED_PDF_TYPES = {"application/pdf"}
+
+
+def clear_batch_for_date(db: Session, on_date: datetime.date) -> tuple[int, int]:
+    """Remove a date's billing rows and any reconciliation built on them,
+    returning (billing rows removed, exceptions removed).
+
+    Re-uploading a batch has to REPLACE that day rather than add to it.
+    Appending instead means the same participants appear twice and every
+    one of them reconciles as a duplicate-billing exception, which reads
+    as the tool being broken rather than as a double upload.
+
+    Prior reconciliation runs for the date go too: they describe a batch
+    that no longer exists, and their exceptions carry foreign keys to the
+    rows being deleted. Any resolution notes on those exceptions are lost
+    with them, so callers should say how much was cleared. The Upload
+    rows and their encrypted files are kept for audit either way.
+    """
+    exceptions = db.scalars(select(Exception_).where(Exception_.date == on_date)).all()
+    for exc in exceptions:
+        db.delete(exc)
+    db.flush()
+
+    for run in db.scalars(select(ReconciliationRun).where(ReconciliationRun.date == on_date)):
+        db.delete(run)
+    db.flush()
+
+    rows = db.scalars(select(BillingRecord).where(BillingRecord.date == on_date)).all()
+    for row in rows:
+        db.delete(row)
+    db.flush()
+
+    return len(rows), len(exceptions)
 
 
 async def _read_limited(file: UploadFile) -> bytes:
@@ -201,6 +235,8 @@ async def upload_pcc_batch(
             f"billing date you selected ({batch_date_val.isoformat()}) -- double check you uploaded the right file."
         )
 
+    replaced_rows, replaced_exceptions = clear_batch_for_date(db, batch_date_val)
+
     upload = Upload(
         kind=UploadKind.PCC_BATCH,
         original_filename=file.filename,
@@ -226,9 +262,15 @@ async def upload_pcc_batch(
     db.commit()
 
     log_audit(db, user=user, action="upload_pcc_batch", resource=upload.id, request=request,
-               detail=f"{len(result.rows)} rows extracted via {result.extraction_method} for {batch_date_val}")
+               detail=(f"{len(result.rows)} rows extracted via {result.extraction_method} for {batch_date_val}; "
+                       f"replaced {replaced_rows} prior row(s), {replaced_exceptions} exception(s)"))
 
     resp = RedirectResponse(url=f"/batches/{batch_date_val.isoformat()}/review", status_code=303)
     msg = f"PCC batch uploaded: {len(result.rows)} rows extracted. Please verify each row before reconciling."
+    if replaced_rows:
+        msg = (f"Replaced the existing batch for this date ({replaced_rows} row(s)"
+               + (f" and {replaced_exceptions} reconciliation exception(s)" if replaced_exceptions else "")
+               + f" removed). {len(result.rows)} rows extracted from the new file -- please verify each row "
+               f"before reconciling.")
     set_flash(resp, msg, "success")
     return resp

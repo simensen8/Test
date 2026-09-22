@@ -1,7 +1,13 @@
 .venv/
 __pycache__/
 *.pyc
-data/
 .env
 *.db
 .pytest_cache/
+
+# Anything holding real or test participant data, encrypted uploads, or
+# the encryption/session keys. The glob is deliberately wide: a stray
+# data_test/ or data_p1/ from a local run must never reach the repo,
+# which is public.
+data/
+data*/
