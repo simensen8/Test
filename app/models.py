@@ -11,7 +11,6 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
-    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -45,6 +44,9 @@ class User(Base):
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Sessions issued before this moment are refused, so changing or
+    # resetting a password signs out whoever else was holding one.
+    password_changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=_now)
     last_login_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -166,7 +168,9 @@ class Upload(Base):
     week_start: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
     # For PCC batch: the single billing day covered.
     batch_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
-    parse_warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Parse warnings name the participants they are about ("'Hall,
+    # Tressa' shares the last name..."), so they are encrypted too.
+    parse_warnings: Mapped[str | None] = mapped_column(EncryptedString(4000), nullable=True)
 
 
 class AttendanceSource(str, enum.Enum):
@@ -331,7 +335,13 @@ class Exception_(Base):
 class AuditLog(Base):
     """Append-only record of actions touching PHI or system security state,
     satisfying the HIPAA Security Rule's audit-controls expectation
-    (45 CFR 164.312(b))."""
+    (45 CFR 164.312(b)).
+
+    `detail` is encrypted like every other PHI-bearing field: entries
+    routinely name a participant and what happened to them ("marked
+    present on the 7th", "merged into"), which is health information
+    about an identified person. Left in plaintext it would be the one
+    table that undoes the point of encrypting the rest."""
 
     __tablename__ = "audit_log"
 
@@ -342,5 +352,5 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(128), index=True)
     resource: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(EncryptedString(2000), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=True)

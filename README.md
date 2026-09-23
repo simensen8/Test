@@ -142,6 +142,26 @@ docker compose up -d --build
 Then open `https://your-domain.example.org` and create the admin
 account on first visit.
 
+### First sign-in
+
+`/setup` creates the first administrator, and it asks for a **setup
+token** so that whoever finds the site first can't claim that account.
+The token is printed in the startup log (`docker compose logs app`) and
+stored in `data/.setup_token`. Once an administrator exists, `/setup`
+stops accepting anything at all.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest              # test suite
+ruff check app tests  # linter (config in ruff.toml)
+mypy app            # type checker (config in mypy.ini)
+pip-audit           # known vulnerabilities in the pinned dependencies
+```
+
+All four are expected to pass clean before a deploy.
+
 ### 3. Ongoing
 
 - **Backups**: `docker compose exec app tar czf - /app/data | ...` (pipe
@@ -260,13 +280,22 @@ operation, not of a single codebase.** Here's the split:
   there is deliberately no email-based reset, since a reset link sitting
   in a mailbox is a way into PHI.
 - **Session security.** Signed, HttpOnly, SameSite=Lax session cookies;
-  a 20-minute idle timeout and 10-hour absolute timeout (configurable);
-  CSRF tokens on every state-changing form.
+  a 20-minute idle timeout and a 10-hour absolute cap measured from when
+  the session began (both configurable); CSRF tokens on every
+  state-changing form. Changing or resetting a password invalidates
+  every session issued before it, so a reset actually signs out whoever
+  else was holding one. Responses carry `Content-Security-Policy`,
+  `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+  `Cache-Control: no-store` and (over HTTPS) HSTS; the OpenAPI schema is
+  not served.
 - **Audit logging.** Every login (success/failure), upload, view of a
   report or the batch review screen, edit, export, and admin action is
   recorded with who/when/what/IP in an append-only audit log
   (`/admin/audit-log`), satisfying the Security Rule's audit-controls
-  expectation (45 CFR 164.312(b)).
+  expectation (45 CFR 164.312(b)). Audit detail is encrypted like every
+  other PHI-bearing field, since entries name participants; the recorded
+  IP is the one the reverse proxy observed, not one a caller can claim
+  in a header.
 - **Minimum necessary by default.** Reviewers can do the reconciliation
   workflow; only admins see the user list and audit log.
 - **No PHI in error responses.** Auth/session failures redirect rather

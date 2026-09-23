@@ -18,10 +18,13 @@ sign-in sheet remains the signed record the state inspects; this is a
 faster way to produce the same facts, not a replacement for it.
 """
 import datetime
+import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.csrf import verify_csrf
@@ -37,6 +40,8 @@ from app.models import (
 )
 from app.render import render
 from app.security import get_current_user, log_audit
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -92,14 +97,15 @@ def check_in_screen(
 
     # Someone marked today who wasn't scheduled -- a drop-in, or a
     # schedule that hasn't been updated -- still belongs on the screen.
+    unscheduled_ids = [pid for pid in records if pid not in expected_ids]
     extra = sorted(
-        [p for p in db.scalars(
-            select(Participant).where(Participant.id.in_([pid for pid in records if pid not in expected_ids]))
-        ).all()],
+        db.scalars(select(Participant).where(Participant.id.in_(unscheduled_ids))).all(),
         key=lambda p: normalize(p.full_name),
-    ) if records else []
+    ) if unscheduled_ids else []
 
-    rows = [{"participant": p, "record": records.get(p.id), "scheduled": True} for p in expected]
+    rows: list[dict[str, Any]] = [
+        {"participant": p, "record": records.get(p.id), "scheduled": True} for p in expected
+    ]
     rows += [{"participant": p, "record": records.get(p.id), "scheduled": False} for p in extra]
 
     present = sum(1 for row in rows if row["record"] and row["record"].attended)
@@ -135,18 +141,50 @@ def check_in_screen(
 
 def _record_attendance(
     db: Session, participant_id: str, day: datetime.date, attended: bool, user,
-) -> AttendanceRecord:
-    record = db.scalar(select(AttendanceRecord).where(
+) -> AttendanceRecord | None:
+    """Record one mark, tolerating a second one arriving at the same time.
+
+    Staff double-tap, and two people can mark the same participant at
+    once. One row per participant per day is enforced by the database,
+    so the loser of that race is caught and retried against the row the
+    winner created -- rather than showing an error for a mark that did,
+    in the end, land. Returns None when another request got there first.
+    """
+    def _apply(record: AttendanceRecord) -> AttendanceRecord:
+        record.attended = attended
+        record.source = AttendanceSource.CHECK_IN
+        record.recorded_by_id = user.id
+        record.recorded_at = datetime.datetime.utcnow()
+        return record
+
+    existing = db.scalar(select(AttendanceRecord).where(
         AttendanceRecord.participant_id == participant_id, AttendanceRecord.date == day,
     ))
-    if record is None:
-        record = AttendanceRecord(participant_id=participant_id, date=day, attended=attended)
-        db.add(record)
-    record.attended = attended
-    record.source = AttendanceSource.CHECK_IN
-    record.recorded_by_id = user.id
-    record.recorded_at = datetime.datetime.utcnow()
-    db.flush()
+    if existing is not None:
+        record = _apply(existing)
+        db.flush()
+        return record
+
+    record = AttendanceRecord(participant_id=participant_id, date=day, attended=attended)
+    try:
+        # A savepoint, not the whole transaction: "mark the rest present"
+        # records dozens of people in one request, and one collision must
+        # not undo the marks made before it.
+        with db.begin_nested():
+            db.add(_apply(record))
+            db.flush()
+    except IntegrityError:
+        # Someone else recorded this participant's day between our read
+        # and our write. Their row is committed and ours can't exist
+        # beside it; re-reading won't show it either, since this
+        # transaction is reading from a snapshot taken before they
+        # committed. The day is recorded either way, so the mark is
+        # treated as landed and the screen shows the stored value when
+        # it reloads. (The savepoint rollback has already discarded the
+        # row we tried to add, so there is nothing to clean up here.)
+        logger.info("Attendance for %s on %s was recorded concurrently; kept the stored mark",
+                    participant_id, day)
+        return None
     return record
 
 
@@ -213,8 +251,8 @@ def mark_rest_present(
     records = _records_for(db, on_date)
     filled = 0
     for participant in scheduled_participants(db, on_date):
-        if participant.id not in records:
-            _record_attendance(db, participant.id, on_date, True, user)
+        already_marked = participant.id in records
+        if not already_marked and _record_attendance(db, participant.id, on_date, True, user):
             filled += 1
     db.commit()
 

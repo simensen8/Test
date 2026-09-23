@@ -90,6 +90,52 @@ def backfill_participant_last_name_index() -> None:
         logger.info("Backfilled last_name_index for %d participant(s)", len(pending))
 
 
+def add_user_password_changed_at() -> None:
+    columns = _column_names("users")
+    if not columns or "password_changed_at" in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN password_changed_at DATETIME"))
+    logger.info("Added users.password_changed_at")
+
+
+def encrypt_existing_phi_text(table: str, column: str) -> None:
+    """Encrypt values written before the column became an encrypted one.
+
+    Audit details and upload parse warnings both name participants, so
+    both are encrypted now. Rows written before that are plaintext, and
+    reading one through the encrypted column type would fail, so they
+    are converted in place. Detecting which is which is a decrypt
+    attempt, not a guess about the contents.
+    """
+    from cryptography.fernet import InvalidToken
+
+    from app.config import FERNET
+
+    if column not in _column_names(table):
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(f"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL")  # noqa: S608
+        ).fetchall()
+        converted = 0
+        for row_id, value in rows:
+            try:
+                FERNET.decrypt(str(value).encode("ascii"))
+                continue  # already encrypted
+            except (InvalidToken, UnicodeEncodeError, ValueError):
+                pass
+            encrypted = FERNET.encrypt(str(value).encode("utf-8")).decode("ascii")
+            conn.execute(
+                text(f"UPDATE {table} SET {column} = :value WHERE id = :id"),  # noqa: S608
+                {"value": encrypted, "id": row_id},
+            )
+            converted += 1
+    if converted:
+        logger.info("Encrypted %d pre-existing %s.%s value(s)", converted, table, column)
+
+
 ATTENDANCE_REBUILT = """
 CREATE TABLE attendance_records_new (
     id VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -131,7 +177,8 @@ def allow_attendance_without_an_upload() -> None:
         statements = [
             "DROP TABLE IF EXISTS attendance_records_new",
             ATTENDANCE_REBUILT,
-            f"INSERT INTO attendance_records_new ({carried}) SELECT {carried} FROM attendance_records",
+            # `carried` is a literal column list defined just above, not input.
+            f"INSERT INTO attendance_records_new ({carried}) SELECT {carried} FROM attendance_records",  # noqa: S608
             "DROP TABLE attendance_records",
             "ALTER TABLE attendance_records_new RENAME TO attendance_records",
             "CREATE INDEX IF NOT EXISTS ix_attendance_records_date ON attendance_records (date)",
@@ -164,5 +211,8 @@ def allow_attendance_without_an_upload() -> None:
 def run_migrations() -> None:
     add_participant_last_name_index()
     add_participant_profile_columns()
+    add_user_password_changed_at()
     allow_attendance_without_an_upload()
     backfill_participant_last_name_index()
+    encrypt_existing_phi_text("audit_log", "detail")
+    encrypt_existing_phi_text("uploads", "parse_warnings")

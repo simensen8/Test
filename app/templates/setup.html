@@ -3,13 +3,19 @@
 {% block content %}
 <div class="panel" style="max-width:480px;margin:3rem auto;">
   <h1>Create administrator account</h1>
-  <p class="muted">No users exist yet. Create the first administrator account to get started.</p>
+  <p class="muted">
+    No users exist yet. Create the first administrator account to get started. The setup token
+    is printed in the server's startup log (<code>docker compose logs app</code>) and stored in
+    <code>data/.setup_token</code> &mdash; it stops anyone else claiming this account first.
+  </p>
   {% if errors %}
     <div class="flash flash-error">
       <ul style="margin:0;padding-left:1.1rem;">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
     </div>
   {% endif %}
   <form method="post" action="/setup">
+    <label for="setup_token">Setup token</label>
+    <input type="text" id="setup_token" name="setup_token" autocomplete="off" required>
     <label for="display_name">Full name</label>
     <input type="text" id="display_name" name="display_name" value="{{ display_name or '' }}" required>
     <label for="email">Work email</label>

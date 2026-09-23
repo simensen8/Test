@@ -101,9 +101,9 @@ def _detect_rotation(text: str) -> tuple[str, int | None, int, str | None]:
     for sep in (",", " - "):
         if sep in text:
             pre, post = text.split(sep, 1)
-            primary, secondary = _half_count(pre), _half_count(post)
-            if primary is not None and secondary is not None:
-                return "rotating_grant", primary, secondary, categorize_payer(post)
+            pre_count, post_count = _half_count(pre), _half_count(post)
+            if pre_count is not None and post_count is not None:
+                return "rotating_grant", pre_count, post_count, categorize_payer(post)
 
     ords = [int(m.group(1)) for m in _ORDINAL_RE.finditer(text)]
     if ords:
@@ -169,6 +169,11 @@ def _score_sheet(ws, name: str) -> tuple[int, int]:
     if "old" in lname or "legacy" in lname or "prior" in lname or "archive" in lname:
         keyword_score -= 100
     name_idx = _match_header(headers, NAME_KEYS)
+    if name_idx is None:
+        # No name column: the sheet may still be scored on its title, but
+        # there are no participant rows to count.
+        return (keyword_score, 0)
+
     data_rows = 0
     for row_idx in range(header_row + 1, ws.max_row + 1):
         val = ws.cell(row=row_idx, column=name_idx + 1).value
@@ -183,15 +188,14 @@ def _select_sheet(wb):
     if not scored:
         return wb.worksheets[0], [wb.worksheets[0].title]
     scored.sort(key=lambda s: s[1], reverse=True)
-    candidates = [name for name, _ in scored]
-    return wb[scored[0][0]], candidates
+    return wb[scored[0][0]], [name for name, _ in scored]
 
 
 def parse_rate_master(file_bytes: bytes) -> RateMasterParseResult:
     result = RateMasterParseResult()
     wb = openpyxl.load_workbook(filename=io.BytesIO(file_bytes), data_only=True)
 
-    ws, candidates = _select_sheet(wb)
+    ws, _candidates = _select_sheet(wb)
     result.sheet_used = ws.title
     if len(wb.sheetnames) > 1:
         result.warnings.append(
@@ -210,6 +214,9 @@ def parse_rate_master(file_bytes: bytes) -> RateMasterParseResult:
     rate_idx = _match_header(headers, RATE_KEYS)
     note_idx = _match_header(headers, NOTE_KEYS)
 
+    if name_idx is None:
+        result.warnings.append("Could not identify the participant name column on this sheet.")
+        return result
     if payer_idx is None:
         result.warnings.append("Could not identify the payer source column; payer will need manual entry.")
 

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.csrf import verify_csrf
+from app.dates import parse_iso_date
 from app.db import get_db
 from app.flash import set_flash
 from app.models import BillingRecord, Exception_, ExceptionStatus, ReconciliationRun
@@ -26,7 +27,12 @@ def reconcile_date(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    the_date = datetime.date.fromisoformat(date)
+    the_date = parse_iso_date(date)
+    if the_date is None:
+        resp = RedirectResponse(url="/dashboard", status_code=303)
+        set_flash(resp, "That isn't a valid date.", "error")
+        return resp
+
     unverified = db.scalar(
         select(BillingRecord.id).where(BillingRecord.date == the_date, BillingRecord.verified == False)  # noqa: E712
     )
@@ -45,15 +51,20 @@ def reconcile_date(
 
 @router.get("/reports/{date}")
 def report_day(date: str, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    the_date = datetime.date.fromisoformat(date)
+    the_date = parse_iso_date(date)
+    if the_date is None:
+        resp = RedirectResponse(url="/dashboard", status_code=303)
+        set_flash(resp, "That isn't a valid date.", "error")
+        return resp
+
     run = db.scalar(
         select(ReconciliationRun).where(ReconciliationRun.date == the_date).order_by(ReconciliationRun.run_at.desc())
     )
-    exceptions = []
+    exceptions: list[Exception_] = []
     if run:
-        exceptions = db.scalars(
+        exceptions = list(db.scalars(
             select(Exception_).where(Exception_.run_id == run.id).order_by(Exception_.reason, Exception_.participant_name_snapshot)
-        ).all()
+        ).all())
 
     log_audit(db, user=user, action="view_reconciliation_report", resource=the_date.isoformat(), request=request)
 
@@ -97,7 +108,12 @@ def resolve_exception(
 
 @router.get("/reports/{date}/export.csv")
 def export_csv(date: str, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    the_date = datetime.date.fromisoformat(date)
+    the_date = parse_iso_date(date)
+    if the_date is None:
+        resp = RedirectResponse(url="/dashboard", status_code=303)
+        set_flash(resp, "That isn't a valid date.", "error")
+        return resp
+
     run = db.scalar(
         select(ReconciliationRun).where(ReconciliationRun.date == the_date).order_by(ReconciliationRun.run_at.desc())
     )

@@ -1,6 +1,5 @@
 """Month views: the program's, and one participant's."""
 import datetime
-import re
 
 from sqlalchemy import select
 

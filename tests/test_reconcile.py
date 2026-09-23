@@ -142,7 +142,7 @@ def test_clean_day_no_exceptions(db_session):
 
 def test_default_private_pay_when_no_rate_rule(db_session):
     db = db_session
-    user = _user(db)
+    _user(db)
     participant, _, _ = get_or_create_participant(db, "Nobody")
     db.commit()
     expected = compute_expected_billing(db, participant.id, MON)
@@ -247,3 +247,120 @@ def test_grant_rule_not_applied_exception(db_session):
     assert run.exception_count == 1
     assert run.exceptions[0].reason == ExceptionReason.GRANT_RULE_NOT_APPLIED
     assert run.exceptions[0].expected_billing == "Parker Grant"
+
+
+def test_re_running_keeps_resolutions_and_replaces_the_run(db_session):
+    """Re-running is routine -- after a rename, a merge, or a corrected
+    batch. It used to reopen every finding on the day and discard the
+    reviewer's reasoning."""
+    import datetime as dt
+
+    from sqlalchemy import select as sa_select
+
+    from app.matching import get_or_create_participant
+    from app.models import (
+        AttendanceRecord,
+        BillingRecord,
+        Exception_,
+        ExceptionStatus,
+        ReconciliationRun,
+        Role,
+        Upload,
+        UploadKind,
+        User,
+    )
+    from app.reconcile import run_reconciliation
+    from app.security import hash_password
+
+    db = db_session
+    day = dt.date(2026, 9, 10)
+    user = User(email="r@example.org", display_name="R",
+                password_hash=hash_password("x" * 12), role=Role.ADMIN)
+    db.add(user)
+    db.flush()
+    upload = Upload(kind=UploadKind.PCC_BATCH, original_filename="b", stored_path="",
+                    uploaded_by_id=user.id, batch_date=day)
+    db.add(upload)
+    db.flush()
+
+    person, _, _ = get_or_create_participant(db, "Adams, Alice")
+    db.add(AttendanceRecord(participant_id=person.id, date=day, attended=False,
+                            source_upload_id=upload.id))
+    db.add(BillingRecord(raw_name="Adams, Alice", date=day, payer_source="Private Pay",
+                         source_upload_id=upload.id, verified=True))
+    db.commit()
+
+    run_reconciliation(db, day, user.id)
+    settled = db.scalar(sa_select(Exception_))
+    settled.status = ExceptionStatus.NOT_AN_ERROR
+    settled.resolution_notes = "Checked with finance -- the sheet was wrong, billing was right."
+    settled.resolved_by_id = user.id
+    db.commit()
+
+    run_reconciliation(db, day, user.id)
+    db.expire_all()
+
+    runs = db.scalars(sa_select(ReconciliationRun)).all()
+    assert len(runs) == 1, "the superseded run doesn't accumulate"
+
+    exceptions = db.scalars(sa_select(Exception_)).all()
+    assert len(exceptions) == 1
+    assert exceptions[0].status == ExceptionStatus.NOT_AN_ERROR
+    assert "Checked with finance" in exceptions[0].resolution_notes
+
+
+def test_a_finding_that_is_genuinely_new_comes_back_open(db_session):
+    import datetime as dt
+
+    from sqlalchemy import select as sa_select
+
+    from app.matching import get_or_create_participant
+    from app.models import (
+        AttendanceRecord,
+        BillingRecord,
+        Exception_,
+        ExceptionStatus,
+        Role,
+        Upload,
+        UploadKind,
+        User,
+    )
+    from app.reconcile import run_reconciliation
+    from app.security import hash_password
+
+    db = db_session
+    day = dt.date(2026, 9, 10)
+    user = User(email="r@example.org", display_name="R",
+                password_hash=hash_password("x" * 12), role=Role.ADMIN)
+    db.add(user)
+    db.flush()
+    upload = Upload(kind=UploadKind.PCC_BATCH, original_filename="b", stored_path="",
+                    uploaded_by_id=user.id, batch_date=day)
+    db.add(upload)
+    db.flush()
+
+    alice, _, _ = get_or_create_participant(db, "Adams, Alice")
+    db.add(AttendanceRecord(participant_id=alice.id, date=day, attended=False,
+                            source_upload_id=upload.id))
+    db.add(BillingRecord(raw_name="Adams, Alice", date=day, payer_source="Private Pay",
+                         source_upload_id=upload.id, verified=True))
+    db.commit()
+    run_reconciliation(db, day, user.id)
+    for exc in db.scalars(sa_select(Exception_)).all():
+        exc.status = ExceptionStatus.NOT_AN_ERROR
+    db.commit()
+
+    # A second participant develops the same kind of problem.
+    bob, _, _ = get_or_create_participant(db, "Brown, Bob")
+    db.add(AttendanceRecord(participant_id=bob.id, date=day, attended=False,
+                            source_upload_id=upload.id))
+    db.add(BillingRecord(raw_name="Brown, Bob", date=day, payer_source="Private Pay",
+                         source_upload_id=upload.id, verified=True))
+    db.commit()
+
+    run_reconciliation(db, day, user.id)
+    db.expire_all()
+
+    by_name = {e.participant_name_snapshot: e.status for e in db.scalars(sa_select(Exception_)).all()}
+    assert by_name["Adams, Alice"] == ExceptionStatus.NOT_AN_ERROR
+    assert by_name["Brown, Bob"] == ExceptionStatus.OPEN, "a new finding is not pre-resolved"

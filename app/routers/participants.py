@@ -17,6 +17,7 @@ from app.crypto_types import blind_index
 from app.csrf import verify_csrf
 from app.db import get_db
 from app.flash import set_flash
+from app.forms import form_text
 from app.matching import extract_last_name, get_or_create_participant, normalize
 from app.models import (
     AttendanceRecord,
@@ -37,6 +38,14 @@ from app.storage import delete_stored, load_decrypted, save_encrypted
 router = APIRouter()
 
 RECENT_DAYS = 30
+
+
+def _parse_status(value: str) -> ParticipantStatus | None:
+    """A status off a form, or None if it isn't one we offer."""
+    try:
+        return ParticipantStatus(value)
+    except ValueError:
+        return None
 
 
 def _roster(db: Session) -> list[Participant]:
@@ -61,9 +70,9 @@ def active_schedule(db: Session, participant_id: str) -> AttendanceSchedule | No
 
 
 def _active_rules(db: Session, participant_id: str) -> list[RateRule]:
-    return db.scalars(
+    return list(db.scalars(
         select(RateRule).where(RateRule.participant_id == participant_id, RateRule.active == True)  # noqa: E712
-    ).all()
+    ).all())
 
 
 @router.get("/participants")
@@ -74,7 +83,8 @@ def roster(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    people = _roster(db)
+    everyone = _roster(db)
+    people = everyone
     if q:
         needle = normalize(q)
         people = [p for p in people if needle in normalize(p.full_name)
@@ -82,13 +92,26 @@ def roster(
     if status:
         people = [p for p in people if p.status.value == status]
 
-    rules_by_participant = {}
-    schedules_by_participant = {}
+    # Two queries for the whole page rather than two per participant:
+    # the roster is drawn on a 1 GB server and was issuing several
+    # hundred round trips to draw eighty-eight rows.
+    listed_ids = {p.id for p in people}
+    rules_by_participant: dict[str, list[RateRule]] = {pid: [] for pid in listed_ids}
+    for rule in db.scalars(
+        select(RateRule).where(RateRule.active == True)  # noqa: E712
+    ).all():
+        if rule.participant_id in listed_ids:
+            rules_by_participant[rule.participant_id].append(rule)
+
+    schedules_by_participant: dict[str, AttendanceSchedule | None] = dict.fromkeys(listed_ids)
+    for schedule in db.scalars(
+        select(AttendanceSchedule).where(AttendanceSchedule.active == True)  # noqa: E712
+    ).all():
+        if schedule.participant_id in listed_ids:
+            schedules_by_participant[schedule.participant_id] = schedule
+
     duplicate_surnames: dict[str, int] = {}
-    for person in people:
-        rules_by_participant[person.id] = _active_rules(db, person.id)
-        schedules_by_participant[person.id] = active_schedule(db, person.id)
-    for person in _roster(db):
+    for person in everyone:
         key = extract_last_name(person.full_name)
         duplicate_surnames[key] = duplicate_surnames.get(key, 0) + 1
 
@@ -98,10 +121,15 @@ def roster(
         "rules_by_participant": rules_by_participant,
         "schedules_by_participant": schedules_by_participant,
         "shared_surnames": {k for k, count in duplicate_surnames.items() if count > 1},
+        # Precomputed with the same rule matching uses, rather than
+        # re-derived in the template from a raw split on the comma.
+        "shares_surname": {
+            p.id: duplicate_surnames.get(extract_last_name(p.full_name), 0) > 1 for p in people
+        },
         "statuses": list(ParticipantStatus),
         "q": q,
         "status_filter": status,
-        "total": len(_roster(db)),
+        "total": len(everyone),
     }, user=user)
 
 
@@ -123,8 +151,14 @@ def add_participant(
     if external_id.strip():
         raw = f"{raw} ({external_id.strip()})"
 
+    new_status = _parse_status(status)
+    if new_status is None:
+        resp = RedirectResponse(url="/participants", status_code=303)
+        set_flash(resp, "That isn't a status this form offers.", "error")
+        return resp
+
     participant, created, ambiguity = get_or_create_participant(db, raw)
-    participant.status = ParticipantStatus(status)
+    participant.status = new_status
     db.commit()
 
     log_audit(db, user=user, action="add_participant" if created else "match_existing_participant",
@@ -234,12 +268,18 @@ def edit_participant(
             set_flash(resp, f"{new_external} already belongs to {clash.full_name}.", "error")
             return resp
 
+    new_status = _parse_status(status)
+    if new_status is None:
+        resp = RedirectResponse(url=f"/participants/{participant_id}", status_code=303)
+        set_flash(resp, "That isn't a status this form offers.", "error")
+        return resp
+
     participant.full_name = new_name
     participant.external_id = new_external
     # The surname index has to follow the name, or a corrected spelling
     # would stop matching the batch rows it was corrected to match.
     participant.last_name_index = blind_index(extract_last_name(new_name))
-    participant.status = ParticipantStatus(status)
+    participant.status = new_status
     participant.notes = notes.strip() or None
     db.commit()
 
@@ -299,8 +339,10 @@ def merge_participant(
     db.flush()
 
     moved_billing = 0
-    for record in db.scalars(select(BillingRecord).where(BillingRecord.participant_id == source.id)).all():
-        record.participant_id = target.id
+    for billing_row in db.scalars(
+        select(BillingRecord).where(BillingRecord.participant_id == source.id)
+    ).all():
+        billing_row.participant_id = target.id
         moved_billing += 1
 
     moved_rules = 0
@@ -345,7 +387,7 @@ def merge_participant(
 # the place they should have to be edited.
 
 
-def _rule_fields(
+def validate_rule_fields(
     payer_source: str, rate: str, grant_rule_type: str, grant_cycle_length: str,
     grant_cycle_secondary_days: str, grant_payer: str, notes: str,
 ) -> tuple[dict, str | None]:
@@ -361,7 +403,10 @@ def _rule_fields(
     if rate_value is not None and rate_value < 0:
         return {}, "The rate can't be negative."
 
-    rule_type = GrantRuleType(grant_rule_type)
+    try:
+        rule_type = GrantRuleType(grant_rule_type)
+    except ValueError:
+        return {}, "That isn't a rotation setting this form offers."
     cycle_length = None
     secondary_days = 1
     secondary_payer = grant_payer.strip() or None
@@ -411,7 +456,7 @@ def add_rule(
         set_flash(resp, "That participant no longer exists.", "error")
         return resp
 
-    fields, error = _rule_fields(payer_source, rate, grant_rule_type, grant_cycle_length,
+    fields, error = validate_rule_fields(payer_source, rate, grant_rule_type, grant_cycle_length,
                                 grant_cycle_secondary_days, grant_payer, notes)
     dates, date_error = _rule_dates(effective_start, effective_end)
     error = error or date_error
@@ -474,7 +519,7 @@ def edit_rule(
         set_flash(resp, "That billing rule no longer exists.", "error")
         return resp
 
-    fields, error = _rule_fields(payer_source, rate, grant_rule_type, grant_cycle_length,
+    fields, error = validate_rule_fields(payer_source, rate, grant_rule_type, grant_cycle_length,
                                 grant_cycle_secondary_days, grant_payer, notes)
     dates, date_error = _rule_dates(effective_start, effective_end)
     error = error or date_error
@@ -537,8 +582,9 @@ async def set_schedule(
         return resp
 
     form = await request.form()
-    selected = sorted({int(day) for day in form.getlist("weekday") if day.isdigit() and 0 <= int(day) <= 6})
-    starts, ends = form.get("effective_start", ""), form.get("effective_end", "")
+    days = [d for d in form.getlist("weekday") if isinstance(d, str) and d.isdigit()]
+    selected = sorted({int(day) for day in days if 0 <= int(day) <= 6})
+    starts, ends = form_text(form, "effective_start"), form_text(form, "effective_end")
 
     try:
         start = datetime.date.fromisoformat(starts) if starts else None
@@ -569,7 +615,7 @@ async def set_schedule(
     schedule.effective_start = start
     schedule.effective_end = end
     schedule.active = True
-    schedule.notes = (form.get("notes") or "").strip() or None
+    schedule.notes = form_text(form, "notes").strip() or None
     db.commit()
 
     log_audit(db, user=user, action="set_schedule", resource=participant_id, request=request,
@@ -589,7 +635,7 @@ async def upload_photo(
     participant_id: str,
     request: Request,
     consent: str = Form(""),
-    photo: UploadFile = None,
+    photo: UploadFile | None = None,
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),

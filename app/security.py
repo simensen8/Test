@@ -1,4 +1,5 @@
 import datetime
+import logging
 
 from fastapi import Depends, HTTPException, Request, status
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -15,11 +16,17 @@ from app.config import (
 from app.db import get_db
 from app.models import AuditLog, Role, User
 
+# passlib 1.7.4 probes bcrypt for a `__about__` attribute that bcrypt 4
+# no longer has, and logs the resulting AttributeError with a traceback
+# on first use. Hashing works; only the probe fails. Quietened so a
+# startup log reads as the operator expects rather than alarming them.
+logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _serializer = URLSafeTimedSerializer(SESSION_SECRET_KEY, salt="session-cookie")
 
 SESSION_COOKIE_NAME = "adp_session"
-PASSWORD_CHANGE_PATH = "/account/password"
+PASSWORD_CHANGE_PATH = "/account/password"  # noqa: S105 -- a URL, not a secret
 # Pages a user with an unchanged temporary password may still reach: the
 # change-password screen itself, and the way out.
 PASSWORD_CHANGE_EXEMPT_PATHS = {PASSWORD_CHANGE_PATH, "/logout"}
@@ -44,10 +51,30 @@ def create_session_token(user: User) -> str:
 
 
 def decode_session_token(token: str) -> dict | None:
+    """Decode a session cookie, or None if it is forged, expired, or
+    malformed.
+
+    Two clocks bound a session. itsdangerous' max_age expires a cookie
+    that has been sitting unused, but it measures from when the cookie
+    was last SIGNED -- and the sliding-expiration refresh re-signs on
+    every request, so on its own it would let an active session run
+    forever. The absolute cap is therefore measured from `issued_at`,
+    which is carried unchanged across refreshes.
+    """
     try:
-        return _serializer.loads(token, max_age=SESSION_ABSOLUTE_TIMEOUT_HOURS * 3600)
+        payload = _serializer.loads(token, max_age=SESSION_ABSOLUTE_TIMEOUT_HOURS * 3600)
     except (BadSignature, SignatureExpired):
         return None
+    if not isinstance(payload, dict) or "uid" not in payload:
+        return None
+    try:
+        issued_at = datetime.datetime.fromisoformat(payload["issued_at"])
+        datetime.datetime.fromisoformat(payload["last_seen"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if datetime.datetime.utcnow() - issued_at > datetime.timedelta(hours=SESSION_ABSOLUTE_TIMEOUT_HOURS):
+        return None
+    return payload
 
 
 def refresh_session_token(payload: dict) -> str:
@@ -57,9 +84,18 @@ def refresh_session_token(payload: dict) -> str:
 
 
 def get_client_ip(request: Request) -> str:
+    """The caller's address, as recorded in the audit log.
+
+    The LAST entry in X-Forwarded-For, not the first: the reverse proxy
+    appends the address it actually saw, while anything before that was
+    supplied by the caller and can say whatever it likes. Taking the
+    first entry let anyone write their own address into the audit trail.
+    """
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
-        return fwd.split(",")[0].strip()
+        hops = [hop.strip() for hop in fwd.split(",") if hop.strip()]
+        if hops:
+            return hops[-1]
     return request.client.host if request.client else "unknown"
 
 
@@ -100,6 +136,16 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, payload["uid"])
     if not user or not user.active:
         raise unauthorized
+
+    # A password change ends every session that predates it. Otherwise
+    # resetting the password of an account you believe to be compromised
+    # leaves whoever holds that session signed in, which is the one
+    # moment the reset is for.
+    if user.password_changed_at:
+        issued_at = datetime.datetime.fromisoformat(payload["issued_at"])
+        if issued_at < user.password_changed_at:
+            raise unauthorized
+
     request.state.session_payload = payload
     request.state.needs_refresh = True
 

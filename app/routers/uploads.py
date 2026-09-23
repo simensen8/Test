@@ -1,13 +1,17 @@
 import datetime
+import logging
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.csrf import verify_csrf
+from app.dates import parse_iso_date
 from app.db import get_db
 from app.flash import set_flash
+from app.forms import uploaded_files
 from app.matching import get_or_create_participant
 from app.models import (
     AttendanceRecord,
@@ -27,14 +31,17 @@ from app.render import render
 from app.security import get_current_user, log_audit
 from app.storage import save_encrypted
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 # A week of batches is five files; the cap leaves room for a fortnight
 # while keeping the whole submission small enough to hold in memory.
 MAX_BATCH_FILES = 14
-ALLOWED_EXCEL_TYPES = {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"}
-ALLOWED_PDF_TYPES = {"application/pdf"}
+# ...and a ceiling on the submission as a whole, since every file in it
+# is held in memory at once and the server this runs on has 1 GB.
+MAX_BATCH_TOTAL_BYTES = 60 * 1024 * 1024
 
 
 def clear_batch_for_date(db: Session, on_date: datetime.date) -> tuple[int, int]:
@@ -69,11 +76,16 @@ def clear_batch_for_date(db: Session, on_date: datetime.date) -> tuple[int, int]
     return len(rows), len(exceptions)
 
 
-async def _read_limited(file: UploadFile) -> bytes:
+async def _read_limited(file: StarletteUploadFile) -> bytes:
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError("File exceeds the 20 MB upload limit.")
     return data
+
+
+def _missing(file: UploadFile | None) -> bool:
+    """True when the form arrived without a file attached."""
+    return file is None or not file.filename
 
 
 @router.get("/upload")
@@ -85,26 +97,45 @@ def upload_form(request: Request, user=Depends(get_current_user)):
 async def upload_attendance(
     request: Request,
     week_start: str = Form(...),
-    file: UploadFile = None,
+    file: UploadFile | None = None,
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    try:
-        week_start_date = datetime.date.fromisoformat(week_start)
-    except ValueError:
+    week_start_date = parse_iso_date(week_start)
+    if week_start_date is None:
         resp = RedirectResponse(url="/upload", status_code=303)
         set_flash(resp, "Invalid week start date.", "error")
         return resp
+    if _missing(file):
+        resp = RedirectResponse(url="/upload", status_code=303)
+        set_flash(resp, "No attendance file was selected.", "error")
+        return resp
+    assert file is not None  # narrowed by _missing above
 
-    raw = await _read_limited(file)
-    stored_path = save_encrypted("weekly_attendance", file.filename, raw)
+    try:
+        raw = await _read_limited(file)
+    except ValueError as exc:
+        resp = RedirectResponse(url="/upload", status_code=303)
+        set_flash(resp, str(exc), "error")
+        return resp
 
-    result = parse_weekly_attendance(raw, week_start_date)
+    # Parsed before it is stored: a file that turns out not to be a
+    # workbook should leave nothing behind but the error message.
+    try:
+        result = parse_weekly_attendance(raw, week_start_date)
+    except Exception:
+        logger.exception("Weekly attendance upload could not be parsed")
+        resp = RedirectResponse(url="/upload", status_code=303)
+        set_flash(resp, "That file couldn't be read as a weekly attendance workbook. "
+                        "Please check it opens in Excel and is the right file, then try again.", "error")
+        return resp
+
+    stored_path = save_encrypted("weekly_attendance", file.filename or "attendance", raw)
 
     upload = Upload(
         kind=UploadKind.WEEKLY_ATTENDANCE,
-        original_filename=file.filename,
+        original_filename=file.filename or "(unnamed)",
         stored_path=stored_path,
         uploaded_by_id=user.id,
         week_start=week_start_date,
@@ -162,18 +193,38 @@ async def upload_attendance(
 @router.post("/upload/rate-master")
 async def upload_rate_master(
     request: Request,
-    file: UploadFile = None,
+    file: UploadFile | None = None,
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    raw = await _read_limited(file)
-    stored_path = save_encrypted("rate_master", file.filename, raw)
-    result = parse_rate_master(raw)
+    if _missing(file):
+        resp = RedirectResponse(url="/upload", status_code=303)
+        set_flash(resp, "No Rate Master file was selected.", "error")
+        return resp
+    assert file is not None  # narrowed by _missing above
+
+    try:
+        raw = await _read_limited(file)
+    except ValueError as exc:
+        resp = RedirectResponse(url="/upload", status_code=303)
+        set_flash(resp, str(exc), "error")
+        return resp
+
+    try:
+        result = parse_rate_master(raw)
+    except Exception:
+        logger.exception("Rate Master upload could not be parsed")
+        resp = RedirectResponse(url="/upload", status_code=303)
+        set_flash(resp, "That file couldn't be read as a Rate Master workbook. "
+                        "Please check it opens in Excel and is the right file, then try again.", "error")
+        return resp
+
+    stored_path = save_encrypted("rate_master", file.filename or "rate_master", raw)
 
     upload = Upload(
         kind=UploadKind.RATE_MASTER,
-        original_filename=file.filename,
+        original_filename=file.filename or "(unnamed)",
         stored_path=stored_path,
         uploaded_by_id=user.id,
     )
@@ -238,11 +289,10 @@ async def upload_pcc_batch(
     # empty file input arrives as an empty string part, which a
     # list[UploadFile] parameter rejects with an unhelpful 422 instead of
     # "no batch file was selected".
-    # (Parts come back as Starlette's UploadFile, not FastAPI's subclass,
-    # so they're identified by having a filename rather than by isinstance.)
     form = await request.form()
-    parts = form.getlist("files") + form.getlist("file")  # "file" = a cached copy of the old single-file form
-    incoming = [part for part in parts if getattr(part, "filename", "")]
+    # "file" as well as "files": a browser showing a cached copy of the
+    # older single-file form still posts under the old name.
+    incoming = uploaded_files(form, "files", "file")
     if not incoming:
         resp = RedirectResponse(url="/upload", status_code=303)
         set_flash(resp, "No batch file was selected.", "error")
@@ -257,18 +307,42 @@ async def upload_pcc_batch(
     # rather than half-importing and leaving the reviewer to work out
     # which file won.
     parsed: list[dict] = []
+    total_bytes = 0
     for upload_file in incoming:
         try:
             raw = await _read_limited(upload_file)
         except ValueError as exc:
             log_audit(db, user=user, action="upload_pcc_batch_rejected", request=request, success=False,
-                      detail=f"{upload_file.filename}: {exc}")
-            parsed.append({"filename": upload_file.filename, "raw": None, "result": None, "error": str(exc)})
+                      detail=f"{upload_file.filename or '(unnamed)'}: {exc}")
+            parsed.append({"filename": upload_file.filename or "(unnamed)", "raw": None, "result": None, "error": str(exc)})
             continue
+
+        total_bytes += len(raw)
+        if total_bytes > MAX_BATCH_TOTAL_BYTES:
+            resp = RedirectResponse(url="/upload", status_code=303)
+            set_flash(resp, f"Those files come to more than "
+                            f"{MAX_BATCH_TOTAL_BYTES // (1024 * 1024)} MB together. "
+                            "Nothing was imported -- please upload them in smaller groups.", "error")
+            return resp
+
+        try:
+            result = parse_pcc_batch(raw)
+        except Exception:
+            # A file that isn't a batch export at all (the wrong PDF, a
+            # truncated download) is reported per file, so the rest of
+            # the week still imports.
+            logger.exception("PCC batch file %s could not be parsed", upload_file.filename)
+            parsed.append({
+                "filename": upload_file.filename or "(unnamed)", "raw": None, "result": None,
+                "error": "This file couldn't be read as a PCC batch export. Re-export the day from "
+                         "PCC (Save Page As -> Webpage, HTML Only) and try again.",
+            })
+            continue
+
         parsed.append({
-            "filename": upload_file.filename,
+            "filename": upload_file.filename or "(unnamed)",
             "raw": raw,
-            "result": parse_pcc_batch(raw),
+            "result": result,
             "error": None,
         })
 
@@ -306,7 +380,7 @@ async def upload_pcc_batch(
             # the audit log has to show that whether or not it parsed.
             failed_upload = Upload(
                 kind=UploadKind.PCC_BATCH, original_filename=filename, stored_path=stored_path,
-                uploaded_by_id=user.id, parse_warnings="\n".join(result.warnings + [error]) or None,
+                uploaded_by_id=user.id, parse_warnings="\n".join([*result.warnings, error]) or None,
             )
             db.add(failed_upload)
             db.flush()

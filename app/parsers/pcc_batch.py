@@ -112,7 +112,7 @@ def _date_from_rows(rows: list[BatchRow]) -> tuple[datetime.date | None, set[str
 
 def _looks_like_html(raw_bytes: bytes) -> bool:
     head = raw_bytes[:2048].lstrip().lower()
-    return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<table" in head
+    return head.startswith((b"<!doctype html", b"<html")) or b"<table" in head
 
 
 def _decode_html(raw_bytes: bytes) -> str:
@@ -204,7 +204,8 @@ def _extract_via_html(raw_bytes: bytes) -> BatchParseResult:
         row_date = vals[date_idx] if date_idx is not None else None
 
         raw_line = " | ".join(f"{h}: {v}" for h, v in zip(
-            ["Charge Code", "Description", "Payer Code"], [charge_text, desc_text, payer_code_text]
+            ["Charge Code", "Description", "Payer Code"], [charge_text, desc_text, payer_code_text],
+            strict=True,
         ) if v)
 
         result.rows.append(BatchRow(
@@ -323,10 +324,7 @@ def _extract_via_pdf(raw_bytes: bytes) -> BatchParseResult:
 # --------------------------------------------------------------- shared ----
 
 def parse_pcc_batch(file_bytes: bytes) -> BatchParseResult:
-    if _looks_like_html(file_bytes):
-        result = _extract_via_html(file_bytes)
-    else:
-        result = _extract_via_pdf(file_bytes)
+    result = _extract_via_html(file_bytes) if _looks_like_html(file_bytes) else _extract_via_pdf(file_bytes)
 
     if not result.rows and not result.warnings:
         result.warnings.append("No participant billing lines could be extracted from this file. Manual entry required.")

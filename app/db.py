@@ -15,6 +15,13 @@ if DATABASE_URL.startswith("sqlite"):
     def _enforce_sqlite_foreign_keys(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # Write-ahead logging lets the reconciliation report be read while
+        # a check-in is being saved; in the default journal mode a single
+        # writer blocks every reader for the length of its transaction.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        # And when two writes do collide, wait rather than failing the
+        # request outright.
+        cursor.execute("PRAGMA busy_timeout=10000")
         cursor.close()
 # autoflush=True (the default) matters here: several upload handlers do
 # a SELECT-then-INSERT-if-missing loop (e.g. "does an AttendanceRecord

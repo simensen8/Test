@@ -75,9 +75,7 @@ def _first_names_compatible(a: str, b: str) -> bool:
         return True
     if len(a) >= 3 and len(b) >= 3 and (a.startswith(b) or b.startswith(a) or a.endswith(b) or b.endswith(a)):
         return True
-    if len(a) >= 4 and len(b) >= 4 and fuzz.ratio(a, b) >= 85:
-        return True
-    return False
+    return len(a) >= 4 and len(b) >= 4 and fuzz.ratio(a, b) >= 85
 
 
 def _first_name_similarity(a: str, b: str) -> float:

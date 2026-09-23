@@ -9,6 +9,10 @@ from app.flash import set_flash
 from app.matching import get_or_create_participant
 from app.models import GrantRuleType, RateRule
 from app.render import render
+# The profile form validates the same fields against the same table;
+# sharing its coercion keeps the two screens from disagreeing about what
+# a valid rule is (and stops a typed rate raising a 500 here).
+from app.routers.participants import validate_rule_fields
 from app.security import get_current_user, log_audit
 
 router = APIRouter()
@@ -38,20 +42,17 @@ def add_rule(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    fields, error = validate_rule_fields(
+        payer_source, rate, grant_rule_type, grant_cycle_length,
+        grant_cycle_secondary_days, grant_payer, notes,
+    )
+    if error:
+        resp = RedirectResponse(url="/rate-master", status_code=303)
+        set_flash(resp, error, "error")
+        return resp
+
     participant, _, ambiguity = get_or_create_participant(db, participant_name)
-    rate_val = float(rate) if rate else None
-    cycle_val = int(grant_cycle_length) if grant_cycle_length else None
-    secondary_val = int(grant_cycle_secondary_days) if grant_cycle_secondary_days else 1
-    db.add(RateRule(
-        participant_id=participant.id,
-        payer_source=payer_source.strip(),
-        rate=rate_val,
-        grant_rule_type=GrantRuleType(grant_rule_type),
-        grant_cycle_length=cycle_val,
-        grant_cycle_secondary_days=secondary_val,
-        grant_payer=grant_payer.strip() or None,
-        notes=notes.strip() or None,
-    ))
+    db.add(RateRule(participant_id=participant.id, **fields))
     db.commit()
     log_audit(db, user=user, action="add_rate_rule", request=request, detail=participant_name)
     resp = RedirectResponse(url="/rate-master", status_code=303)
@@ -83,13 +84,17 @@ def edit_rule(
         set_flash(resp, "Rule not found.", "error")
         return resp
 
-    rule.payer_source = payer_source.strip()
-    rule.rate = float(rate) if rate else None
-    rule.grant_rule_type = GrantRuleType(grant_rule_type)
-    rule.grant_cycle_length = int(grant_cycle_length) if grant_cycle_length else None
-    rule.grant_cycle_secondary_days = int(grant_cycle_secondary_days) if grant_cycle_secondary_days else 1
-    rule.grant_payer = grant_payer.strip() or None
-    rule.notes = notes.strip() or None
+    fields, error = validate_rule_fields(
+        payer_source, rate, grant_rule_type, grant_cycle_length,
+        grant_cycle_secondary_days, grant_payer, notes,
+    )
+    if error:
+        resp = RedirectResponse(url="/rate-master", status_code=303)
+        set_flash(resp, error, "error")
+        return resp
+
+    for key, value in fields.items():
+        setattr(rule, key, value)
     db.commit()
 
     log_audit(db, user=user, action="edit_rate_rule", resource=rule_id, request=request)

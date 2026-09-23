@@ -7,7 +7,7 @@ import tempfile
 os.environ["APP_DATA_DIR"] = tempfile.mkdtemp(prefix="adp_test_")
 os.environ["COOKIE_SECURE"] = "false"
 
-import pytest  # noqa: E402
+import pytest
 
 
 @pytest.fixture()

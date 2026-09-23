@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:520px;margin:3rem auto;">
+  <h1 style="margin-top:0;">
+    {% if status_code == 403 %}That form has expired
+    {% elif status_code == 404 %}Page not found
+    {% else %}Something went wrong{% endif %}
+  </h1>
+  <p>{{ message }}</p>
+  <p class="muted">
+    {% if status_code == 403 %}
+      This usually means the page was open for a long time before it was submitted. Go back,
+      reload, and try again &mdash; nothing was saved.
+    {% endif %}
+  </p>
+  <div style="margin-top:1rem;">
+    <a href="/dashboard"><button type="button">Back to dashboard</button></a>
+  </div>
+</div>
+{% endblock %}

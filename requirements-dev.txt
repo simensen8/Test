@@ -1,3 +1,9 @@
 -r requirements.txt
-fpdf2==2.7.9
+pytest==9.1.1
 httpx==0.28.1
+fpdf2==2.7.9
+# Used by the checks in README > Development: ruff for linting, pip-audit
+# for known vulnerabilities in the pinned dependencies above.
+ruff==0.16.8
+pip-audit==2.10.1
+mypy==2.3.1

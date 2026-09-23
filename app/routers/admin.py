@@ -1,6 +1,8 @@
+import datetime
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.csrf import verify_csrf
@@ -68,10 +70,27 @@ def deactivate_user(
     user=Depends(require_admin),
 ):
     target = db.get(User, user_id)
-    if target and target.id != user.id:
-        target.active = False
-        db.commit()
-        log_audit(db, user=user, action="deactivate_user", resource=user_id, request=request)
+    if target is None or target.id == user.id:
+        resp = RedirectResponse(url="/admin/users", status_code=303)
+        set_flash(resp, "You can't deactivate your own account.", "error")
+        return resp
+
+    # Deactivating the last administrator locks everyone out of user
+    # management permanently -- there is no way back in from the UI.
+    remaining_admins = db.scalar(
+        select(func.count()).select_from(User).where(
+            User.role == Role.ADMIN, User.active == True, User.id != target.id,  # noqa: E712
+        )
+    ) or 0
+    if target.role == Role.ADMIN and remaining_admins == 0:
+        resp = RedirectResponse(url="/admin/users", status_code=303)
+        set_flash(resp, "That's the only active administrator. Make someone else an "
+                        "administrator first.", "error")
+        return resp
+
+    target.active = False
+    db.commit()
+    log_audit(db, user=user, action="deactivate_user", resource=user_id, request=request)
     resp = RedirectResponse(url="/admin/users", status_code=303)
     set_flash(resp, "User deactivated.", "success")
     return resp
@@ -125,6 +144,9 @@ def reset_user_password(
     target.must_change_password = True
     target.failed_login_count = 0
     target.locked_until = None
+    # Signs out whoever was holding a session on this account, which is
+    # the point of a reset when the account may be compromised.
+    target.password_changed_at = datetime.datetime.utcnow()
     db.commit()
 
     log_audit(db, user=user, action="reset_user_password", resource=target.id, request=request,

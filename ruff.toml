@@ -1,0 +1,17 @@
+# Lint configuration. Run with: ruff check app tests
+line-length = 110
+
+[lint]
+select = ["E", "F", "W", "B", "C4", "SIM", "RUF", "PIE", "RET", "S"]
+ignore = [
+    "E501",    # long lines are handled by line-length above, not per-line
+    "B008",    # Depends()/Form() in defaults is the FastAPI idiom
+    "RUF001",  # typographic quotes in comments quoting real source data
+    "RUF012",  # ClassVar annotations aren't used in this codebase
+    "S101",    # asserts are how the tests assert
+    "SIM105",  # contextlib.suppress reads worse than try/except/pass here
+]
+
+[lint.per-file-ignores]
+# Tests build deliberately malformed input and reach into internals.
+"tests/*" = ["S105", "S106", "S311"]

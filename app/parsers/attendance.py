@@ -127,9 +127,9 @@ def _find_weekday_header(rows: list[list[str]]) -> tuple[int | None, dict[int, i
             if not text:
                 continue
             for offset, patterns in WEEKDAY_PATTERNS.items():
-                if text in patterns or text.startswith(patterns[0][:3]):
-                    if offset not in found:
-                        found[offset] = col_idx
+                matches = text in patterns or text.startswith(patterns[0][:3])
+                if matches and offset not in found:
+                    found[offset] = col_idx
         if len(found) >= 3:  # accept partial weeks (e.g. holiday-shortened)
             return row_idx, found
     return None, {}

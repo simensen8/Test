@@ -153,6 +153,6 @@ def test_the_attendance_rebuild_runs_once(legacy_attendance_db):
     run_migrations()
     run_migrations()
 
-    from app.models import AttendanceRecord  # noqa: F401
+    from app.models import AttendanceRecord
     with Session(engine) as session:
         assert session.scalars(select(AttendanceRecord)).all() == []

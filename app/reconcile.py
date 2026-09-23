@@ -23,6 +23,7 @@ from app.models import (
     BillingRecord,
     Exception_,
     ExceptionReason,
+    ExceptionStatus,
     GrantRuleType,
     Participant,
     RateRule,
@@ -40,8 +41,18 @@ class ExpectedBilling:
 
 
 def _active_rate_rule(db: Session, participant_id: str, on_date: datetime.date) -> RateRule | None:
+    """The rule in force on a date.
+
+    Ordered newest-first so that when two rules overlap -- easy to do
+    with effective dates -- the most recently recorded arrangement wins,
+    every time. Without an order the answer came back in whatever order
+    the rows happened to be stored, so the same day could reconcile
+    differently on two runs.
+    """
     rules = db.scalars(
-        select(RateRule).where(RateRule.participant_id == participant_id, RateRule.active == True)  # noqa: E712
+        select(RateRule)
+        .where(RateRule.participant_id == participant_id, RateRule.active == True)  # noqa: E712
+        .order_by(RateRule.created_at.desc(), RateRule.id.desc())
     ).all()
     for rule in rules:
         if rule.effective_start and on_date < rule.effective_start:
@@ -91,7 +102,39 @@ def _payers_match(expected: str, actual: str | None) -> bool:
     return " ".join(expected.strip().lower().split()) == " ".join(actual.strip().lower().split())
 
 
+def _resolution_key(participant_id: str | None, name_snapshot: str, reason: ExceptionReason) -> tuple:
+    """What makes two exceptions 'the same finding' across runs."""
+    return (participant_id or f"name:{name_snapshot}", reason)
+
+
 def run_reconciliation(db: Session, on_date: datetime.date, run_by_id: str) -> ReconciliationRun:
+    """Reconcile one day, keeping any review work already done on it.
+
+    Re-running is normal -- after correcting a name, merging two records
+    or re-uploading a batch -- so a finding a reviewer has already
+    settled comes back settled, with their note. Without that, every
+    re-run silently reopened the whole day and discarded the reasoning,
+    which is the work this tool exists to save.
+    """
+    previous_resolutions = {
+        _resolution_key(exc.participant_id, exc.participant_name_snapshot, exc.reason): exc
+        for exc in db.scalars(select(Exception_).where(Exception_.date == on_date)).all()
+        if exc.status != ExceptionStatus.OPEN
+    }
+    carried_over = {
+        key: (exc.status, exc.resolution_notes, exc.resolved_by_id, exc.resolved_at)
+        for key, exc in previous_resolutions.items()
+    }
+
+    # The previous run described a state of the data that no longer
+    # holds, so it goes -- exceptions first, since they point at it.
+    for stale in db.scalars(select(Exception_).where(Exception_.date == on_date)).all():
+        db.delete(stale)
+    db.flush()
+    for stale_run in db.scalars(select(ReconciliationRun).where(ReconciliationRun.date == on_date)).all():
+        db.delete(stale_run)
+    db.flush()
+
     run = ReconciliationRun(date=on_date, run_by_id=run_by_id)
     db.add(run)
     db.flush()
@@ -140,6 +183,8 @@ def run_reconciliation(db: Session, on_date: datetime.date, run_by_id: str) -> R
         if not attendance.attended:
             continue
         participant = db.get(Participant, participant_id)
+        if participant is None:
+            continue  # record removed underneath us (a merge, mid-run)
         expected = compute_expected_billing(db, participant_id, on_date)
         rows = billing_by_participant.get(participant_id, [])
 
@@ -177,12 +222,14 @@ def run_reconciliation(db: Session, on_date: datetime.date, run_by_id: str) -> R
     # 2) Billed rows for participants attendance says did NOT attend, or
     #    for whom we have no attendance record at all for this date.
     for participant_id, rows in billing_by_participant.items():
-        attendance = attendance_by_participant.get(participant_id)
+        billed_day = attendance_by_participant.get(participant_id)
         participant = db.get(Participant, participant_id)
-        if attendance is not None and attendance.attended:
+        if participant is None:
+            continue
+        if billed_day is not None and billed_day.attended:
             continue  # already handled above
         for row in rows:
-            if attendance is None:
+            if billed_day is None:
                 add_exception(
                     participant, participant.full_name, ExceptionReason.UNMATCHED_NAME,
                     expected="No attendance record for this date", actual=row.payer_source or "(blank)",
@@ -210,6 +257,11 @@ def run_reconciliation(db: Session, on_date: datetime.date, run_by_id: str) -> R
         )
 
     for exc in exceptions:
+        carried = carried_over.get(
+            _resolution_key(exc.participant_id, exc.participant_name_snapshot, exc.reason)
+        )
+        if carried is not None:
+            exc.status, exc.resolution_notes, exc.resolved_by_id, exc.resolved_at = carried
         db.add(exc)
     run.exception_count = len(exceptions)
     db.commit()
