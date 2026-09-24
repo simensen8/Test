@@ -11,3 +11,10 @@ __pycache__/
 # which is public.
 data/
 data*/
+
+# Throwaway build scaffolding. The sandbox this was developed in sits
+# behind a TLS-inspecting proxy, so testing the production image there
+# needs a Dockerfile variant that trusts the proxy's CA bundle. Neither
+# file is part of the build, and neither should ever be committed.
+Dockerfile.sandboxtest
+ca-bundle.crt
