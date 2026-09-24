@@ -102,6 +102,39 @@ def _payers_match(expected: str, actual: str | None) -> bool:
     return " ".join(expected.strip().lower().split()) == " ".join(actual.strip().lower().split())
 
 
+def _rate_mismatch(expected: ExpectedBilling, row: BillingRecord) -> tuple[float, float] | None:
+    """The rate on the profile against what PCC charged, or None when the
+    two can't be compared meaningfully.
+
+    Four cases are left alone rather than reported, because a finding
+    there would be noise rather than a discrepancy:
+
+    No rate on the profile, or no amount on the batch line -- there is
+    nothing to compare. Most participants have no rate on file at all;
+    they are the Private Pay default.
+
+    A rotation day. The rate recorded on a profile belongs to the
+    primary payer, and on a secondary-payer day the correct charge is a
+    different figure the Rate Master never carried. Checking the primary
+    rate against a Title III day would flag every rotation, every cycle.
+
+    A day whose payer is already wrong. That is reported as a payer
+    exception, and the rate is wrong only as a consequence -- saying so
+    twice makes the report longer without making it more useful.
+
+    Only an exact match passes. This is money, and a cent of drift
+    across eighty-eight participants is a real number by month end.
+    """
+    rule = expected.rule
+    if rule is None or rule.rate is None or row.amount is None:
+        return None
+    if expected.is_grant_day:
+        return None
+    if abs(row.amount - rule.rate) < 0.005:
+        return None
+    return rule.rate, row.amount
+
+
 def _resolution_key(participant_id: str | None, name_snapshot: str, reason: ExceptionReason) -> tuple:
     """What makes two exceptions 'the same finding' across runs."""
     return (participant_id or f"name:{name_snapshot}", reason)
@@ -218,6 +251,18 @@ def run_reconciliation(db: Session, on_date: datetime.date, run_by_id: str) -> R
                     expected=expected.payer, actual=row.payer_source or "(blank)",
                     detail=detail, billing_record_id=row.id,
                 )
+            else:
+                mismatch = _rate_mismatch(expected, row)
+                if mismatch is not None:
+                    on_file, billed = mismatch
+                    add_exception(
+                        participant, participant.full_name, ExceptionReason.WRONG_RATE,
+                        expected=f"${on_file:.2f}", actual=f"${billed:.2f}",
+                        detail=(f"The profile has {expected.payer} at ${on_file:.2f} per day; the "
+                                f"PCC batch charged ${billed:.2f}. Either the charge is wrong or "
+                                f"the rate on the profile is out of date."),
+                        billing_record_id=row.id,
+                    )
 
     # 2) Billed rows for participants attendance says did NOT attend, or
     #    for whom we have no attendance record at all for this date.

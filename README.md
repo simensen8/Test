@@ -17,17 +17,23 @@ for what that surfaced and fixed.
 
 - Participant attended but is missing from the PCC batch
 - Participant did not attend but appears on the PCC batch
-- Incorrect payer source (vs. the Rate Master; unlisted participants
-  default to Private Pay)
+- Incorrect payer source (vs. the participant's profile; participants
+  with no rule default to Private Pay)
+- A charge that differs from the rate on the participant's profile
 - A rotating grant arrangement (e.g. "3 paid days, 4th day to the Parker
   Grant") not applied on the day it should have been
 - A name on one source that can't be matched to the others
 - Duplicate billing entries for the same participant/day
 
-Sliding-scale private-pay rate adjustments are intentionally **out of
-scope** (per the source process, those are reconciled by Finance and PCC
-has no mechanism to reflect them) -- this tool only flags *incorrect
-payer source*, never *incorrect rate*.
+The rate check compares the day's charge against the rate on the
+profile, and deliberately stays quiet where the two aren't comparable:
+when no rate is on file (most participants -- they are the Private Pay
+default), when the batch line carries no amount, on a rotation day (the
+profile holds the primary payer's rate, not the secondary payer's), and
+when the payer is already wrong (that exception already describes the
+problem). Sliding-scale private pay is still reconciled by Finance, so
+those findings are expected to be marked "not an error" -- a resolution
+that now survives re-running the day.
 
 ## How the workflow maps to the app
 

@@ -286,6 +286,7 @@ class ExceptionReason(str, enum.Enum):
     MISSING_FROM_BATCH = "missing_from_batch"           # attended, not billed
     BILLED_BUT_ABSENT = "billed_but_absent"              # billed, did not attend
     WRONG_PAYER = "wrong_payer"                          # payer source mismatch
+    WRONG_RATE = "wrong_rate"                            # charged a different amount than the profile
     GRANT_RULE_NOT_APPLIED = "grant_rule_not_applied"    # rotation rule mismatch
     UNMATCHED_NAME = "unmatched_name"                    # can't match across sources
     DUPLICATE_ENTRY = "duplicate_entry"                  # duplicate billing line
