@@ -26,9 +26,9 @@
           {% if day.month == month_number %}
           <div class="daynum"><a href="/check-in?day={{ day.isoformat() }}">{{ day.day }}</a></div>
           {% if cell.record and cell.record.attended %}
-            <div class="cell-note"><span class="badge badge-ok">here</span></div>
+            <div class="cell-note dot"><span class="badge badge-ok">here</span></div>
           {% elif cell.record %}
-            <div class="cell-note"><span class="badge badge-danger">out</span></div>
+            <div class="cell-note dot"><span class="badge badge-danger">out</span></div>
           {% elif cell.expected and not cell.is_future %}
             <div class="cell-note">expected, not marked</div>
           {% elif cell.expected %}

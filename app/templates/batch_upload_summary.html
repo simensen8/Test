@@ -16,12 +16,12 @@
   <tbody>
     {% for item in summary %}
     <tr>
-      <td>{{ item.filename }}</td>
-      <td>
+      <td data-label="File">{{ item.filename }}</td>
+      <td data-label="Billing date">
         {% if item.date %}{{ item.date.strftime('%a, %b %-d, %Y') }}{% else %}<span class="muted">&mdash;</span>{% endif %}
       </td>
-      <td>{{ item.row_count }}</td>
-      <td>
+      <td data-label="Rows">{{ item.row_count }}</td>
+      <td data-label="Notes">
         {% if item.error %}
           <span class="badge badge-danger">Not imported</span>
           <div>{{ item.error }}</div>

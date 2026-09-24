@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Exception Report — {{ date.strftime('%A, %B %-d, %Y') }}</h1>
 
-<div class="panel" style="display:flex;justify-content:space-between;align-items:center;">
+<div class="panel panel-head">
   <div>
     {% if not run %}
       <span class="badge badge-muted">Not yet reconciled</span>
@@ -17,7 +17,7 @@
       <p class="muted">Reconciliation run at {{ run.run_at.strftime('%Y-%m-%d %H:%M UTC') }}.</p>
     {% endif %}
   </div>
-  <div style="display:flex;gap:0.5rem;">
+  <div class="actions">
     {% if run %}<a class="button secondary" href="/reports/{{ date.isoformat() }}/export.csv">Export CSV</a>{% endif %}
     <form method="post" action="/reports/{{ date.isoformat() }}/reconcile">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

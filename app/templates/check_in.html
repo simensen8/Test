@@ -38,24 +38,24 @@
 </div>
 
 <div class="panel">
-  <table>
+  <table class="checkin">
     <thead><tr><th>Participant</th><th>Status</th><th style="width:1%;white-space:nowrap;">Mark</th></tr></thead>
     <tbody>
       {% for row in rows %}
       <tr id="p-{{ row.participant.id }}">
-        <td data-label="Participant">
+        <td data-label="" class="who">
           {% if row.participant.photo_path %}<img class="avatar" src="/participants/{{ row.participant.id }}/photo" alt="">{% endif %}
           <a href="/participants/{{ row.participant.id }}">{{ row.participant.full_name }}</a>
           {% if not row.scheduled %}<span class="badge badge-muted" title="Not on today's schedule">drop-in</span>{% endif %}
           {% if row.participant.status.value == 'trial' %}<span class="badge badge-warn">trial</span>{% endif %}
         </td>
-        <td data-label="Status">
+        <td data-label="">
           {% if row.record and row.record.attended %}<span class="badge badge-ok">present</span>
           {% elif row.record %}<span class="badge badge-danger">out</span>
           {% else %}<span class="muted">not yet marked</span>{% endif %}
         </td>
-        <td>
-          <div style="display:flex;gap:.4rem;">
+        <td data-label="">
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
             {% for value, label, is_current in [
                  ('present', 'Present', row.record and row.record.attended),
                  ('absent', 'Out', row.record and not row.record.attended)] %}

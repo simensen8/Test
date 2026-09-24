@@ -32,16 +32,16 @@
           {% endif %}
           {% if cell.run %}
             {% if cell.open_exceptions %}
-              <div class="cell-note">
+              <div class="cell-note dot">
                 <a href="/reports/{{ day.isoformat() }}"><span class="badge badge-danger">{{ cell.open_exceptions }} open</span></a>
               </div>
             {% else %}
-              <div class="cell-note">
+              <div class="cell-note dot">
                 <a href="/reports/{{ day.isoformat() }}"><span class="badge badge-ok">reconciled</span></a>
               </div>
             {% endif %}
           {% elif cell.has_batch %}
-            <div class="cell-note"><a href="/batches/{{ day.isoformat() }}/review"><span class="badge badge-warn">batch to review</span></a></div>
+            <div class="cell-note dot"><a href="/batches/{{ day.isoformat() }}/review"><span class="badge badge-warn">batch to review</span></a></div>
           {% endif %}
           {% endif %}
         </td>

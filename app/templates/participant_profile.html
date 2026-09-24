@@ -251,8 +251,8 @@
     <tbody>
       {% for other in same_surname %}
       <tr>
-        <td><a href="/participants/{{ other.id }}">{{ other.full_name }}</a></td>
-        <td>{{ other.external_id or '—' }}</td>
+        <td data-label="Participant"><a href="/participants/{{ other.id }}">{{ other.full_name }}</a></td>
+        <td data-label="PCC ID">{{ other.external_id or '—' }}</td>
         <td>
           {% if is_admin %}
           <form method="post" action="/participants/{{ participant.id }}/merge"
@@ -282,8 +282,8 @@
       <tbody>
         {% for record in attendance %}
         <tr>
-          <td>{{ record.date.strftime('%a, %b %-d') }}</td>
-          <td>{% if record.attended %}<span class="badge badge-ok">present</span>{% else %}<span class="badge badge-muted">absent</span>{% endif %}</td>
+          <td data-label="Date">{{ record.date.strftime('%a, %b %-d') }}</td>
+          <td data-label="Attended">{% if record.attended %}<span class="badge badge-ok">present</span>{% else %}<span class="badge badge-muted">absent</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -299,9 +299,9 @@
       <tbody>
         {% for record in billing %}
         <tr>
-          <td>{{ record.date.strftime('%a, %b %-d') }}</td>
-          <td>{{ record.payer_source or '—' }}</td>
-          <td>{% if record.amount is not none %}${{ '%.2f'|format(record.amount) }}{% else %}—{% endif %}</td>
+          <td data-label="Date">{{ record.date.strftime('%a, %b %-d') }}</td>
+          <td data-label="Payer">{{ record.payer_source or '—' }}</td>
+          <td data-label="Amount">{% if record.amount is not none %}${{ '%.2f'|format(record.amount) }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -318,9 +318,9 @@
     <tbody>
       {% for exception in exceptions %}
       <tr>
-        <td>{{ exception.date.strftime('%b %-d, %Y') }}</td>
-        <td>{{ exception.reason.value.replace('_', ' ') }}</td>
-        <td>{{ exception.status.value.replace('_', ' ') }}</td>
+        <td data-label="Date">{{ exception.date.strftime('%b %-d, %Y') }}</td>
+        <td data-label="Reason">{{ exception.reason.value.replace('_', ' ') }}</td>
+        <td data-label="Status">{{ exception.status.value.replace('_', ' ') }}</td>
         <td><a href="/reports/{{ exception.date.isoformat() }}">Open that day</a></td>
       </tr>
       {% endfor %}

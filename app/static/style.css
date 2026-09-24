@@ -1,3 +1,9 @@
+/* Three shapes, not one shrunk down.
+   Phone   (<= 599px): one column, bottom navigation, tables become cards.
+   Tablet  (600-1023): two columns, top navigation, touch-sized controls.
+   Desktop (>= 1024) : the dense layout the daily job is done in.
+   Sizes stay in rem so the browser's own text-size setting is honoured. */
+
 :root {
   --bg: #f5f6f8;
   --panel: #ffffff;
@@ -12,46 +18,143 @@
   --warn-bg: #fff5df;
   --ok: #1e6b3c;
   --ok-bg: #e8f5ec;
+  /* Apple's minimum comfortable target. Anything people tap on a moving
+     bus -- the check-in buttons above all -- is built to this. */
+  --tap: 2.75rem;
+  --radius: 8px;
 }
+
 * { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
 body {
   margin: 0;
-  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
+  line-height: 1.5;
+  /* Nothing in this app is a wide document, so a stray wide element
+     should be visible as a bug rather than silently scrolling the page. */
+  overflow-x: hidden;
 }
+
+/* ---------------------------------------------------------- header ---- */
+
 header.topbar {
   background: var(--primary-dark);
   color: #fff;
-  padding: 0.75rem 1.25rem;
+  padding: 0.6rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
 }
 header.topbar a { color: #fff; text-decoration: none; }
-header.topbar nav a { margin-right: 1rem; opacity: 0.9; }
-header.topbar nav a:hover { opacity: 1; text-decoration: underline; }
+header.topbar .brand { font-size: 0.98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header.topbar nav { display: flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; }
+header.topbar nav a {
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  opacity: 0.92;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+header.topbar nav a:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+header.topbar nav a[aria-current="page"] { background: rgba(255, 255, 255, 0.18); opacity: 1; }
+
+/* The account menu: a disclosure, so it needs no script. */
+.account { position: relative; }
+.account > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  min-height: var(--tap);
+}
+.account > summary::-webkit-details-marker { display: none; }
+.account > summary:hover { background: rgba(255, 255, 255, 0.12); }
+.account .initials {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.7rem; height: 1.7rem; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22); font-size: 0.75rem; font-weight: 700;
+}
+.account-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  min-width: 15rem;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+  padding: 0.5rem;
+  z-index: 40;
+}
+.account-menu .who { padding: 0.5rem 0.6rem 0.6rem; border-bottom: 1px solid var(--border); }
+.account-menu .who strong { display: block; }
+.account-menu a, .account-menu button {
+  display: block; width: 100%; text-align: left;
+  padding: 0.6rem; border-radius: 6px; font-size: 0.92rem;
+  background: none; border: none; color: var(--text); cursor: pointer;
+  min-height: var(--tap);
+}
+.account-menu a:hover, .account-menu button:hover { background: #f0f2f5; }
+.account-menu form { margin: 0; }
+
 main { max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem 3rem; }
-h1 { font-size: 1.5rem; }
+footer.disclaimer { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; font-size: 0.78rem; color: var(--muted); }
+
+h1 { font-size: 1.5rem; line-height: 1.25; }
 h2 { font-size: 1.15rem; margin-top: 2rem; }
+h3 { font-size: 1rem; }
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 1.25rem;
   margin-bottom: 1.25rem;
 }
+
+/* ---------------------------------------------------------- tables ---- */
+
 table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { background: #f0f2f5; font-weight: 600; }
 tr:hover td { background: #fafbfc; }
+
+/* A genuinely wide data table may scroll sideways inside its own box --
+   but only where it is asked for, never the whole page. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 .badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
 .badge-ok { background: var(--ok-bg); color: var(--ok); }
 .badge-warn { background: var(--warn-bg); color: var(--warn); }
 .badge-danger { background: var(--danger-bg); color: var(--danger); }
 .badge-muted { background: #eceff2; color: var(--muted); }
+
+/* A panel whose summary sits opposite its buttons. On a phone the two
+   halves stack instead of squeezing each other: a status pill squeezed
+   into a third of the width wraps into a three-line balloon. */
+.panel-head { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; justify-content: space-between; align-items: center; }
+.panel-head > div { min-width: 0; }
+.panel-head .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.panel-head .badge { white-space: nowrap; }
+@media (max-width: 599px) {
+  .panel-head > div { flex: 1 1 100%; }
+}
+
+/* ---------------------------------------------------------- forms ----- */
+
 a.button, button, input[type=submit] {
-  display: inline-block;
+  display: inline-flex; align-items: center; justify-content: center;
   background: var(--primary);
   color: #fff;
   border: none;
@@ -60,50 +163,176 @@ a.button, button, input[type=submit] {
   cursor: pointer;
   text-decoration: none;
   font-size: 0.92rem;
+  min-height: var(--tap);
 }
 a.button:hover, button:hover { background: var(--primary-dark); }
 button.secondary, a.button.secondary { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+button.secondary:hover { background: #eef3f8; }
 button.danger { background: var(--danger); }
+button.danger.secondary { background: #fff; color: var(--danger); border-color: var(--danger); }
+button[disabled] { opacity: 0.55; cursor: default; }
+:focus-visible { outline: 3px solid #2f6df6; outline-offset: 2px; }
+
 label { display: block; font-weight: 600; margin: 0.6rem 0 0.25rem; font-size: 0.88rem; }
-input[type=text], input[type=password], input[type=email], input[type=date], input[type=number], input[type=file], select, textarea {
-  width: 100%; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 5px; font-size: 0.92rem;
+input[type=text], input[type=password], input[type=email], input[type=date], input[type=number],
+input[type=search], input[type=file], select, textarea {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  /* 16px stops iOS zooming the page when a field is focused. */
+  font-size: 1rem;
+  min-height: var(--tap);
+  background: #fff;
+  color: var(--text);
 }
+textarea { min-height: 5rem; }
+
 .flash { padding: 0.7rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
 .flash-error { background: var(--danger-bg); color: var(--danger); }
 .flash-success { background: var(--ok-bg); color: var(--ok); }
 .muted { color: var(--muted); }
+
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
 .week-nav { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
-.day-card { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; }
-footer.disclaimer { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; font-size: 0.78rem; color: var(--muted); }
-@media (max-width: 700px) {
-  .grid-2 { grid-template-columns: 1fr; }
-  table, thead, tbody, th, td, tr { display: block; }
-  thead { display: none; }
-  td { border-bottom: none; padding: 0.2rem 0; }
-  tr { border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 0.5rem; }
-  td::before { content: attr(data-label) ": "; font-weight: 600; }
-}
+.day-card { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; }
 
-/* ---- month calendar ---- */
+/* A row of numbers -- the counts on check-in, import and the dashboard. */
+.stats { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.stat .value { font-size: 2rem; font-weight: 700; line-height: 1; }
+.stat .label { color: var(--muted); font-size: 0.88rem; }
+
+/* ------------------------------------------------- month calendar ----- */
+
 .calendar { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .calendar th { text-align: left; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .04em;
   color: var(--muted); padding: 0.4rem 0.5rem; }
 .calendar td { border: 1px solid #e6e9ee; vertical-align: top; padding: 0.4rem 0.5rem; height: 5.5rem; }
 .calendar td.outside { background: #fafbfc; }
-.calendar td.today { outline: 2px solid var(--accent, #2f6df6); outline-offset: -2px; }
+.calendar td.today { outline: 2px solid #2f6df6; outline-offset: -2px; }
 .calendar .daynum { font-weight: 600; font-size: 0.85rem; }
 .calendar .daynum a { text-decoration: none; }
 .calendar .cell-note { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; line-height: 1.35; }
 .calendar .cell-note strong { color: inherit; }
-@media (max-width: 720px) {
-  .calendar td { height: auto; min-height: 3rem; font-size: 0.8rem; }
-  .calendar .cell-note { font-size: 0.7rem; }
-}
 
-/* ---- participant photos ---- */
+/* --------------------------------------------- participant photos ----- */
+
 .avatar { width: 2.25rem; height: 2.25rem; border-radius: 50%; object-fit: cover; vertical-align: middle;
   margin-right: .5rem; background: #eceff2; }
 .avatar-lg { width: 7rem; height: 7rem; border-radius: 12px; object-fit: cover; background: #eceff2; }
-.avatar-initials { display: inline-flex; align-items: center; justify-content: center; font-size: .8rem;
-  font-weight: 600; color: var(--muted); }
+
+/* ------------------------------------------------- bottom nav (phone) - */
+
+.mobile-nav { display: none; }
+
+/* =========================== phone =================================== */
+@media (max-width: 599px) {
+  main { margin: 1rem auto; padding: 0 1rem 5.5rem; }  /* room for the bar */
+  h1 { font-size: 1.3rem; }
+  h2 { margin-top: 1.5rem; }
+  .panel { padding: 1rem; border-radius: 10px; }
+  .grid-2 { grid-template-columns: 1fr; gap: 1rem; }
+  .stats { gap: 1rem 1.75rem; }
+  .stat .value { font-size: 1.6rem; }
+
+  /* The secondary links move into the account menu and the bar below, so
+     the header keeps only identity. */
+  header.topbar nav .nav-link { display: none; }
+
+  /* Tables read as cards. Each cell labels itself from data-label, which
+     is why every table here carries one. */
+  table, thead, tbody, th, td, tr { display: block; }
+  thead { display: none; }
+  td { border-bottom: none; padding: 0.15rem 0; }
+  tr { border-bottom: 1px solid var(--border); padding: 0.6rem 0; }
+  tr:last-child { border-bottom: none; }
+  td::before { content: attr(data-label) ": "; font-weight: 600; color: var(--muted); }
+  td[data-label=""]::before, td:not([data-label])::before { content: ""; }
+  tr:hover td { background: none; }
+
+  /* ...except the month grid, which stays a grid: a calendar in one
+     column is a list, and loses the shape of the month. The notes go and
+     the day number stays, tappable. */
+  .calendar, .calendar thead, .calendar tbody, .calendar tr { display: revert; }
+  .calendar th, .calendar td { display: revert; }
+  .calendar th { font-size: 0.62rem; padding: 0.2rem; text-align: center; }
+  .calendar td { height: 3.1rem; padding: 0.2rem; text-align: center; border-color: #e9ecf1; }
+  .calendar .daynum { font-size: 0.82rem; }
+  .calendar .daynum a { display: inline-block; min-width: 1.6rem; }
+  .calendar .cell-note { display: none; }
+  .calendar .cell-note.dot { display: block; margin: 0.1rem auto 0; }
+  .calendar .cell-note.dot .badge { font-size: 0; padding: 0; width: 0.5rem; height: 0.5rem; border-radius: 50%; }
+
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 0.25rem 0.25rem calc(0.25rem + env(safe-area-inset-bottom, 0px));
+    z-index: 30;
+  }
+  .mobile-nav a {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.15rem;
+    padding: 0.35rem 0.2rem;
+    min-height: var(--tap);
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .mobile-nav a[aria-current="page"] { color: var(--primary); font-weight: 700; }
+  .mobile-nav .icon { font-size: 1.1rem; line-height: 1; }
+
+  .account-menu { position: fixed; left: 0.75rem; right: 0.75rem; top: 3.5rem; min-width: 0; }
+}
+
+/* =========================== tablet ================================== */
+@media (min-width: 600px) and (max-width: 1023px) {
+  main { max-width: 100%; padding: 0 1.25rem 3rem; }
+  /* Side by side is the point of the extra width, but the columns want
+     more room to breathe than they get on a laptop. */
+  .grid-2 { gap: 1.5rem; }
+  header.topbar { padding: 0.7rem 1.25rem; }
+  header.topbar nav a { padding: 0.5rem 0.55rem; }
+  .calendar td { height: 4.5rem; }
+  .calendar .cell-note { font-size: 0.72rem; }
+  /* Touch, not a mouse: keep the targets full size. */
+  td, th { padding: 0.6rem; }
+}
+
+/* =========================== desktop ================================= */
+@media (min-width: 1024px) {
+  main { margin: 1.75rem auto; }
+  /* A pointer is precise, so rows can be tighter than a finger needs. */
+  a.button, button, input[type=submit] { min-height: 2.25rem; }
+  input[type=text], input[type=password], input[type=email], input[type=date],
+  input[type=number], input[type=search], select { min-height: 2.25rem; font-size: 0.92rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------------------------------------------------- check-in list --- */
+/* The name and the status badge speak for themselves, so on a phone they
+   carry no "Participant:" prefix -- and the name leads the card. */
+@media (max-width: 599px) {
+  .checkin tr { padding: 0.75rem 0; }
+  .checkin td.who { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.15rem; }
+  .checkin td.who a { text-decoration: none; color: var(--text); }
+  .checkin td form { flex: 1 1 auto; }
+  .checkin td button { width: 100%; }
+
+  /* A day's state in the month grid reads as a coloured dot; at 8px the
+     default badge tints are too faint to see. */
+  .calendar .cell-note.dot .badge { width: 0.6rem; height: 0.6rem; border: 1px solid currentColor; }
+}
+
+/* Reason badges sit in a narrow column; keeping them on one line stops a
+   three-word label making the row three times as tall. */
+@media (min-width: 1024px) {
+  td .badge { white-space: nowrap; }
+}
