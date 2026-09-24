@@ -1,35 +1,125 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<h1>Weekly Billing Reconciliation</h1>
-<div class="week-nav">
-  <a class="button secondary" href="/dashboard?week={{ prev_week }}">&larr; Previous week</a>
-  <strong>Week of {{ week_start.strftime('%B %-d, %Y') }}</strong>
-  <a class="button secondary" href="/dashboard?week={{ next_week }}">Next week &rarr;</a>
-  <a class="button" href="/upload" style="margin-left:auto;">Upload documents</a>
+<h1 style="margin-bottom:.25rem;">{{ today.strftime('%A, %B %-d, %Y') }}</h1>
+<p class="muted">{{ active_participants }} active participant{{ '' if active_participants == 1 else 's' }}.</p>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Today</h2>
+  {% set t = today_panel %}
+  {% if t.expected == 0 %}
+    <p class="muted" style="margin-bottom:0;">
+      Nobody is scheduled for today. Attendance schedules are set on each
+      <a href="/participants">participant's profile</a>.
+    </p>
+  {% else %}
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-value">{{ t.present }}<span class="kpi-of">/ {{ t.expected }}</span></div>
+      <div class="kpi-label">marked present</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-value">{{ t.absent }}</div>
+      <div class="kpi-label">marked absent</div>
+    </div>
+    <div class="kpi {{ 'kpi-warn' if t.unmarked else '' }}">
+      <div class="kpi-value">{{ t.unmarked }}</div>
+      <div class="kpi-label">still unmarked</div>
+    </div>
+  </div>
+  <p style="margin-bottom:0;">
+    <a class="button" href="/check-in">Go to check-in</a>
+    {% if t.batch_in %}
+      <span class="badge badge-ok">today's batch is loaded</span>
+    {% else %}
+      <span class="badge badge-muted">no batch for today yet</span>
+    {% endif %}
+  </p>
+  {% endif %}
 </div>
 
 <div class="panel">
-  {% for day in days %}
-    <div class="day-card">
-      <div>
-        <strong>{{ day.date.strftime('%A, %B %-d, %Y') }}</strong><br>
-        <span class="muted">
-          Attendance: {% if day.has_attendance %}uploaded{% else %}missing{% endif %} ·
-          PCC batch: {% if day.has_batch %}uploaded{% else %}missing{% endif %}
-        </span>
+  <h2 style="margin-top:0;">Needs attention</h2>
+  {% if attention %}
+    <p class="muted">
+      Days in the last two weeks with billing still outstanding. A day the program was closed
+      never appears here.
+    </p>
+    <table class="billing-week">
+      <thead><tr><th>Day</th><th>State</th><th>Next step</th></tr></thead>
+      <tbody>
+        {% for day in attention %}
+        <tr>
+          <td data-label="" class="day"><strong>{{ day.date.strftime('%a, %b %-d') }}</strong></td>
+          <td data-label="State">
+            {% if not day.has_batch %}<span class="badge badge-muted">no batch</span>
+            {% elif day.unverified %}<span class="badge badge-warn">{{ day.unverified }} row(s) unchecked</span>
+            {% elif not day.run %}<span class="badge badge-warn">not reconciled</span>
+            {% else %}<span class="badge badge-danger">{{ day.open_exceptions }} open</span>{% endif %}
+          </td>
+          <td data-label="Next step">
+            <a class="button {{ day.next_action.style }}" href="{{ day.next_action.href }}">{{ day.next_action.label }}</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted" style="margin-bottom:0;">
+      Nothing outstanding in the last two weeks. The <a href="/billing?week={{ week_start }}">billing
+      week</a> has the full picture.
+    </p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">{{ month_label }}</h2>
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-value">
+        {% if billed_total is not none %}${{ '{:,.2f}'.format(billed_total) }}{% else %}&mdash;{% endif %}
       </div>
-      <div>
-        {% if not day.run %}
-          <span class="badge badge-muted">Not yet reconciled</span>
-        {% elif day.open_exceptions == 0 %}
-          <span class="badge badge-ok">Reconciled / No Exceptions</span>
-        {% else %}
-          <span class="badge badge-danger">{{ day.open_exceptions }} open exception{{ 's' if day.open_exceptions != 1 else '' }}</span>
-        {% endif %}
-        <a class="button secondary" href="/reports/{{ day.date.isoformat() }}">View</a>
+      <div class="kpi-label">
+        billed on PCC batches
+        {% if billed_days %}<br><span class="muted">across {{ billed_days }} day{{ '' if billed_days == 1 else 's' }}</span>{% endif %}
       </div>
     </div>
-  {% endfor %}
+    <div class="kpi">
+      <div class="kpi-value">{{ reconciled_days }}<span class="kpi-of">/ {{ billed_days }}</span></div>
+      <div class="kpi-label">days reconciled</div>
+    </div>
+    <div class="kpi {{ 'kpi-danger' if open_exceptions else 'kpi-ok' }}">
+      <div class="kpi-value">{{ open_exceptions }}</div>
+      <div class="kpi-label">
+        open exceptions
+        {% if settled_exceptions %}<br><span class="muted">{{ settled_exceptions }} settled</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% if billed_total is none %}
+    <p class="muted" style="margin-bottom:0;">
+      No PCC batch has been uploaded for this month yet, so there is nothing to total.
+    </p>
+  {% else %}
+    <p class="muted" style="margin-bottom:0;">
+      The billed figure is the sum of what the PCC batches charged &mdash; what was actually billed,
+      not a projection. Days still to be reconciled are not yet checked against anyone's profile.
+    </p>
+  {% endif %}
+
+  {% if by_reason %}
+  <h3 style="margin-bottom:.25rem;">What the open findings are</h3>
+  <table>
+    <thead><tr><th>Reason</th><th>Open</th></tr></thead>
+    <tbody>
+      {% for reason, count in by_reason %}
+      <tr>
+        <td data-label="Reason">{{ reason }}</td>
+        <td data-label="Open">{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </div>
 {% endblock %}

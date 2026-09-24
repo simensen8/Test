@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Billing{% endblock %}
+{% block content %}
+<h1 style="margin-bottom:.25rem;">Billing &mdash; week of {{ week_start.strftime('%B %-d, %Y') }}</h1>
+<p class="muted">
+  {% if outstanding %}
+    {{ outstanding }} of these days {{ 'is' if outstanding == 1 else 'are' }} waiting on something.
+  {% else %}
+    Every day this week is reconciled with nothing open.
+  {% endif %}
+</p>
+
+<div class="week-nav">
+  <a class="button secondary" href="/billing?week={{ prev_week }}">&larr; Previous</a>
+  <a class="button secondary" href="/billing?week={{ this_week }}">This week</a>
+  <a class="button secondary" href="/billing?week={{ next_week }}">Next &rarr;</a>
+  <a class="button" href="/upload">Upload a batch</a>
+</div>
+
+<div class="panel">
+  <table class="billing-week">
+    <thead>
+      <tr>
+        <th>Day</th>
+        <th>PCC batch</th>
+        <th>Attendance</th>
+        <th>State</th>
+        <th>Next step</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for day in days %}
+      <tr>
+        <td data-label="" class="day">
+          <strong>{{ day.date.strftime('%a, %b %-d') }}</strong>
+        </td>
+        <td data-label="PCC batch">
+          {% if day.has_batch %}
+            {{ day.billed_rows }} row{{ '' if day.billed_rows == 1 else 's' }}
+            {% if day.unverified %}<span class="muted">({{ day.unverified }} unchecked)</span>{% endif %}
+          {% else %}
+            <span class="muted">not uploaded</span>
+          {% endif %}
+        </td>
+        <td data-label="Attendance">
+          {% if day.has_attendance %}recorded{% else %}<span class="muted">none</span>{% endif %}
+        </td>
+        <td data-label="State">
+          {% if not day.run %}
+            <span class="badge badge-muted">not reconciled</span>
+          {% elif day.open_exceptions == 0 %}
+            <span class="badge badge-ok">reconciled</span>
+          {% else %}
+            <span class="badge badge-danger">{{ day.open_exceptions }} open</span>
+          {% endif %}
+        </td>
+        <td data-label="Next step">
+          {% if day.next_action %}
+            <a class="button {{ day.next_action.style }}" href="{{ day.next_action.href }}">{{ day.next_action.label }}</a>
+          {% else %}
+            <span class="muted">&mdash;</span>
+          {% endif %}
+        </td>
+        <td data-label="" class="report">
+          <a href="/reports/{{ day.date.isoformat() }}">Report</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">How a day gets billed</h2>
+  <p class="muted" style="margin-bottom:0;">
+    Mark people present on <a href="/check-in">check-in</a> as they arrive. Upload that day's PCC
+    ancillary batch on <a href="/upload">upload</a>. Check the batch rows against what PCC shows,
+    then reconcile &mdash; the report lists only what disagrees with each participant's
+    <a href="/participants">profile</a>, which is where payers and rates are kept.
+  </p>
+</div>
+{% endblock %}

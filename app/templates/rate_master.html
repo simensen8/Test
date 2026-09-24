@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Rate Master{% endblock %}
 {% block content %}
-<h1>Rate Master</h1>
+<h1 style="margin-bottom:.25rem;">All payer arrangements</h1>
 <p class="muted">
-  Participant-specific payer sources, rates, and billing exceptions. Anyone not listed here defaults
-  to Private Pay with no special rule. This is the whole list in one place; the same settings live on
-  each person's <a href="/participants">profile</a>, which is usually the easier place to change one.
+  Every participant who bills as anything other than plain Private Pay, in one table. This is a way
+  to read across the roster &mdash; the arrangement itself belongs to the person, and their
+  <a href="/participants">profile</a> is where it is kept and where reconciliation reads it from.
+  Anyone not listed here bills as Private Pay with no special rule.
 </p>
 
 <div class="panel">

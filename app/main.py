@@ -20,8 +20,8 @@ from app.migrations import run_migrations
 from app.models import User
 from app.render import render
 from app.routers import (
-    account, admin, admin_import, auth, batches, calendar, checkin, dashboard, participants,
-    rate_master, reports, uploads,
+    account, admin, admin_import, auth, batches, billing, calendar, checkin, dashboard,
+    participants, rate_master, reports, uploads,
 )
 from app.security import SESSION_COOKIE_NAME, refresh_session_token
 
@@ -69,6 +69,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.include_router(auth.router)
 app.include_router(account.router)
 app.include_router(dashboard.router)
+app.include_router(billing.router)
 app.include_router(uploads.router)
 app.include_router(batches.router)
 app.include_router(reports.router)

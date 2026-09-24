@@ -1,13 +1,17 @@
 {# `nav_items` is built here rather than in each view so the top bar and
    the phone's bottom bar always offer the same destinations. `primary`
-   marks the four that earn a place on a phone screen. #}
+   marks the four that earn a place on a phone screen, and `section`
+   lists the paths that belong to a tab -- a batch review and an
+   exception report are both billing, so Billing stays lit on them. #}
 {% set nav_items = [
-  {'href': '/dashboard',    'label': 'Dashboard', 'icon': '▦', 'primary': true},
+  {'href': '/dashboard',    'label': 'Dashboard', 'icon': '▦', 'primary': false},
   {'href': '/check-in',     'label': 'Check-in',  'icon': '✓', 'primary': true},
+  {'href': '/billing',      'label': 'Billing',   'icon': '$', 'primary': true,
+   'section': ['/billing', '/reports/', '/batches/', '/rate-master']},
+  {'href': '/participants', 'label': 'Roster',    'icon': '☰', 'primary': true,
+   'section': ['/participants']},
   {'href': '/calendar',     'label': 'Calendar',  'icon': '▥', 'primary': false},
   {'href': '/upload',       'label': 'Upload',    'icon': '↑', 'primary': true},
-  {'href': '/participants', 'label': 'Roster',    'icon': '☰', 'primary': true},
-  {'href': '/rate-master',  'label': 'Rate Master', 'icon': '$', 'primary': false},
 ] %}
 {% set admin_items = [
   {'href': '/admin/import',    'label': 'Import'},
@@ -15,6 +19,14 @@
   {'href': '/admin/audit-log', 'label': 'Audit Log'},
 ] %}
 {% set here = request.url.path %}
+{% macro nav_current(item, here) -%}
+  {#- a tab is current on its own page and on any page of its section -#}
+  {%- set ns = namespace(on = (here == item.href)) -%}
+  {%- for prefix in item.section | default([]) -%}
+    {%- if here.startswith(prefix) %}{% set ns.on = true %}{% endif -%}
+  {%- endfor -%}
+  {%- if ns.on %}aria-current="page"{% endif -%}
+{%- endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -29,13 +41,11 @@
     <a class="brand" href="/dashboard"><strong>{{ org_name }}</strong> — Billing Reconciliation</a>
     <nav>
       {% for item in nav_items %}
-      <a class="nav-link" href="{{ item.href }}"
-         {% if here == item.href %}aria-current="page"{% endif %}>{{ item.label }}</a>
+      <a class="nav-link" href="{{ item.href }}" {{ nav_current(item, here) }}>{{ item.label }}</a>
       {% endfor %}
       {% if is_admin %}
         {% for item in admin_items %}
-        <a class="nav-link" href="{{ item.href }}"
-           {% if here == item.href %}aria-current="page"{% endif %}>{{ item.label }}</a>
+        <a class="nav-link" href="{{ item.href }}" {{ nav_current(item, here) }}>{{ item.label }}</a>
         {% endfor %}
       {% endif %}
 
@@ -82,7 +92,7 @@
   {% if user %}
   <nav class="mobile-nav" aria-label="Main">
     {% for item in nav_items if item.primary %}
-    <a href="{{ item.href }}" {% if here == item.href %}aria-current="page"{% endif %}>
+    <a href="{{ item.href }}" {{ nav_current(item, here) }}>
       <span class="icon" aria-hidden="true">{{ item.icon }}</span>{{ item.label }}
     </a>
     {% endfor %}

@@ -203,6 +203,23 @@ textarea { min-height: 5rem; }
 .stat .value { font-size: 2rem; font-weight: 700; line-height: 1; }
 .stat .label { color: var(--muted); font-size: 0.88rem; }
 
+/* KPI tiles. Each one is a figure a person came to the page to read, so
+   the number is the largest thing in the tile and the label sits under
+   it -- never the other way round. A tile carries a colour only when
+   its value means something is wrong; a green wall teaches people to
+   stop reading it. */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.kpi { padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: 8px; background: #fbfcfd; }
+.kpi-value { font-size: 2rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; }
+.kpi-of { font-size: 1.05rem; font-weight: 600; color: var(--muted); margin-left: 0.3rem; }
+.kpi-label { color: var(--muted); font-size: 0.88rem; margin-top: 0.15rem; }
+.kpi-ok { border-color: #bfe3cb; background: var(--ok-bg); }
+.kpi-ok .kpi-value { color: var(--ok); }
+.kpi-warn { border-color: #f0dcae; background: var(--warn-bg); }
+.kpi-warn .kpi-value { color: var(--warn); }
+.kpi-danger { border-color: #f2c3c3; background: var(--danger-bg); }
+.kpi-danger .kpi-value { color: var(--danger); }
+
 /* ------------------------------------------------- month calendar ----- */
 
 .calendar { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -329,6 +346,20 @@ textarea { min-height: 5rem; }
   /* A day's state in the month grid reads as a coloured dot; at 8px the
      default badge tints are too faint to see. */
   .calendar .cell-note.dot .badge { width: 0.6rem; height: 0.6rem; border: 1px solid currentColor; }
+
+  /* Two KPI tiles fit across a phone. An odd one out takes the full
+     width rather than sitting next to a hole -- and the odd one is
+     usually the figure that needs acting on. */
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .kpis > .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .kpi-value { font-size: 1.7rem; }
+
+  /* The billing week as cards: the day leads, and its next step is a
+     full-width button rather than something tucked after a label. */
+  .billing-week td.day { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.15rem; }
+  .billing-week td.report { margin-top: 0.15rem; }
+  .billing-week td[data-label="Next step"] { margin-top: 0.35rem; }
+  .billing-week td[data-label="Next step"] .button { display: block; text-align: center; }
 }
 
 /* Reason badges sit in a narrow column; keeping them on one line stops a
