@@ -78,7 +78,35 @@
 
   <div class="panel">
     <h2 style="margin-top:0;">How they're billed</h2>
-    {% if rules %}
+    {% if not is_admin %}
+      {# Payer arrangements drive what reconciliation expects, so they are
+         changed by an administrator. Everyone else sees what is on file. #}
+      {% if rules %}
+        {% for rule in rules %}
+        <div style="border-bottom:1px solid #e6e9ee;padding-bottom:.75rem;margin-bottom:.75rem;">
+          <div><strong>{{ rule.payer_source }}</strong>{% if rule.rate is not none %}
+            &middot; ${{ '%.2f'|format(rule.rate) }}{% endif %}</div>
+          {% if rule.grant_rule_type.value != 'none' and rule.grant_cycle_length %}
+          <div class="muted">
+            {{ rule.grant_cycle_length }} day(s), then {{ rule.grant_cycle_secondary_days }} day(s)
+            on {{ rule.grant_payer or 'the grant' }}
+          </div>
+          {% endif %}
+          {% if rule.effective_start or rule.effective_end %}
+          <div class="muted">
+            {% if rule.effective_start %}from {{ rule.effective_start.strftime('%b %-d, %Y') }}{% endif %}
+            {% if rule.effective_end %}until {{ rule.effective_end.strftime('%b %-d, %Y') }}{% endif %}
+          </div>
+          {% endif %}
+          {% if rule.notes %}<div class="muted">{{ rule.notes }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="muted">No rule recorded, so this participant is expected to bill as
+          <strong>Private Pay</strong> every day they attend.</p>
+      {% endif %}
+      <p class="muted" style="margin-bottom:0;">An administrator can change this.</p>
+    {% elif rules %}
       {% for rule in rules %}
       <form method="post" action="/participants/{{ participant.id }}/rules/{{ rule.id }}/edit"
             style="border-bottom:1px solid #e6e9ee;padding-bottom:1rem;margin-bottom:1rem;">
@@ -215,8 +243,8 @@
   <h2 style="margin-top:0;">Same surname as</h2>
   <p class="muted">
     If one of these is the same person recorded twice, merging moves their attendance, billing and
-    billing rule onto one record. The record you merge is then deleted. This can't be undone, so
-    check the two profiles first.
+    billing rule onto one record. The record merged away is then deleted, which can't be undone, so
+    merging is an administrator action.
   </p>
   <table>
     <thead><tr><th>Participant</th><th>PCC ID</th><th></th></tr></thead>
@@ -226,12 +254,16 @@
         <td><a href="/participants/{{ other.id }}">{{ other.full_name }}</a></td>
         <td>{{ other.external_id or '—' }}</td>
         <td>
+          {% if is_admin %}
           <form method="post" action="/participants/{{ participant.id }}/merge"
                 onsubmit="return confirm('Merge {{ participant.full_name }} into {{ other.full_name }}? {{ participant.full_name }} will be deleted.');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="target_id" value="{{ other.id }}">
             <button type="submit" class="secondary">Merge this profile into theirs</button>
           </form>
+          {% else %}
+          <span class="muted">An administrator can merge these.</span>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

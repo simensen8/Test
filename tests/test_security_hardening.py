@@ -176,9 +176,9 @@ def test_a_malformed_date_in_a_url_redirects_rather_than_crashing(client, path):
 
 
 def test_uploading_nothing_is_refused_politely(client):
-    for path, data in [("/upload/attendance", {"week_start": "2026-09-07"}),
-                       ("/upload/rate-master", {})]:
-        resp = client.post(path, data={"csrf_token": _csrf(client, "/upload"), **data},
+    for path, data in [("/admin/import/roster", {"week_start": "2026-09-07"}),
+                       ("/admin/import/rates", {})]:
+        resp = client.post(path, data={"csrf_token": _csrf(client, "/admin/import"), **data},
                            follow_redirects=False)
         assert resp.status_code == 303, path
 
@@ -186,8 +186,8 @@ def test_uploading_nothing_is_refused_politely(client):
 def test_a_file_that_is_not_a_workbook_is_refused_politely(client, db_session):
     from app.models import Upload
 
-    resp = client.post("/upload/attendance", data={
-        "csrf_token": _csrf(client, "/upload"), "week_start": "2026-09-07",
+    resp = client.post("/admin/import/roster", data={
+        "csrf_token": _csrf(client, "/admin/import"), "week_start": "2026-09-07",
     }, files={"file": ("notes.xlsx", b"this is not a spreadsheet", "application/vnd.ms-excel")},
         follow_redirects=False)
 

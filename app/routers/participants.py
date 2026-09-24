@@ -32,7 +32,7 @@ from app.models import (
 from app.payer_categories import CANONICAL_CATEGORIES
 from app.photos import PhotoError, normalize_photo
 from app.render import render
-from app.security import get_current_user, log_audit
+from app.security import get_current_user, log_audit, require_admin
 from app.storage import delete_stored, load_decrypted, save_encrypted
 
 router = APIRouter()
@@ -297,7 +297,7 @@ def merge_participant(
     target_id: str = Form(...),
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     """Fold this participant into another and delete the empty one.
 
@@ -448,7 +448,7 @@ def add_rule(
     notes: str = Form(""),
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     participant = db.get(Participant, participant_id)
     if participant is None:
@@ -511,7 +511,7 @@ def edit_rule(
     notes: str = Form(""),
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     rule = db.get(RateRule, rule_id)
     if rule is None or rule.participant_id != participant_id:
@@ -545,7 +545,7 @@ def remove_rule(
     request: Request,
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     rule = db.get(RateRule, rule_id)
     if rule and rule.participant_id == participant_id:

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Import{% endblock %}
+{% block content %}
+<h1 style="margin-bottom:.25rem;">Set up the roster</h1>
+<p class="muted">
+  A one-time import that brings the program's existing records into the app. Run it once before
+  going live. Afterwards each participant's profile is the single place their payer arrangement
+  lives, and neither workbook is part of the daily routine.
+</p>
+
+{% if outcome %}
+<div class="panel">
+  <h2 style="margin-top:0;">{{ outcome.title }}</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:2rem;margin-bottom:1rem;">
+    {% for value, label in outcome.counts %}
+    {% if value %}
+    <div>
+      <div style="font-size:1.6rem;font-weight:700;line-height:1;">{{ value }}</div>
+      <div class="muted">{{ label }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% if outcome.warnings %}
+    <h3 style="margin-bottom:.25rem;">{{ outcome.warnings | length }} thing(s) to check</h3>
+    <p class="muted" style="margin-top:0;">
+      Nothing here stopped the import. A rotation read out of a free-text note is worth confirming
+      against the workbook, since it decides what reconciliation expects.
+    </p>
+    <ul>
+      {% for warning in outcome.warnings %}<li>{{ warning }}</li>{% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted" style="margin-bottom:0;">Nothing needed a second look.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2 style="margin-top:0;">Where things stand</h2>
+  <div style="display:flex;flex-wrap:wrap;gap:2rem;">
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{ state.participants }}</div>
+      <div class="muted">participants on the roster</div>
+    </div>
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{ state.with_rules }}</div>
+      <div class="muted">with a payer rule</div>
+    </div>
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{ state.rotations }}</div>
+      <div class="muted">rotation rules</div>
+    </div>
+    <div>
+      <div style="font-size:2rem;font-weight:700;line-height:1;">{{ state.default_private_pay }}</div>
+      <div class="muted">defaulting to Private Pay</div>
+    </div>
+  </div>
+  {% if state.participants %}
+    <p class="muted" style="margin-bottom:0;">
+      Participants without a rule are expected to bill as Private Pay &mdash; that is the intended
+      default, not a gap. Check any of them on the <a href="/participants">roster</a>.
+    </p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Step 1 &middot; Roster</h2>
+  <p class="muted">
+    From a Weekly Attendance workbook (.xlsx or .ods). It carries every participant's name and
+    PCC ID, which is what makes it the complete roster. The week you choose is also loaded as
+    attendance, so pick a representative recent week.
+  </p>
+  <form method="post" action="/admin/import/roster" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="week_start">Week start (Monday)</label>
+    <input type="date" id="week_start" name="week_start" value="{{ today }}" required>
+    <label for="roster_file">Attendance workbook</label>
+    <input type="file" id="roster_file" name="file" accept=".xlsx,.xls,.ods" required>
+    <div style="margin-top:1rem;"><button type="submit">Import roster</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">Step 2 &middot; Payer rules</h2>
+  <p class="muted">
+    From the consolidated Rate Master (.xlsx). Only participants with a payer exception appear on
+    it; everyone else defaults to Private Pay. What it uniquely carries is the rotation rules, so
+    this step is what lets reconciliation know that someone bills three days private pay and then
+    a day on the grant.
+  </p>
+  <p class="muted">
+    Rules from a previous import are superseded. Anything typed onto a profile by hand is kept.
+  </p>
+  <form method="post" action="/admin/import/rates" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="rates_file">Rate Master workbook</label>
+    <input type="file" id="rates_file" name="file" accept=".xlsx,.xls" required>
+    <div style="margin-top:1rem;"><button type="submit">Import payer rules</button></div>
+  </form>
+</div>
+
+{% if unmatched %}
+<div class="panel">
+  <h2 style="margin-top:0;">Billed, but nobody on the roster matches</h2>
+  <p class="muted">
+    These names appear on a PCC batch that has been uploaded but match no participant. Each one
+    will raise an exception every day they're billed until they're added or the spelling is
+    corrected on the <a href="/participants">roster</a>.
+  </p>
+  <ul>
+    {% for name in unmatched %}<li>{{ name }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

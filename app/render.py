@@ -3,6 +3,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import BASE_DIR, ORGANIZATION_NAME
 from app.csrf import get_csrf_token
+from app.models import Role
 from app.flash import FLASH_COOKIE, read_flashes
 from app.security import SESSION_COOKIE_NAME
 
@@ -16,6 +17,10 @@ def render(request: Request, template_name: str, context: dict | None = None, us
     ctx["request"] = request
     ctx["org_name"] = ORGANIZATION_NAME
     ctx["user"] = user
+    # Templates hide what the signed-in user may not do. The server
+    # enforces it regardless -- this only keeps buttons off the screen
+    # that would answer 403 if pressed.
+    ctx["is_admin"] = bool(user is not None and user.role == Role.ADMIN)
     ctx["csrf_token"] = get_csrf_token(request) if request.cookies.get(SESSION_COOKIE_NAME) else ""
 
     raw_flash = request.cookies.get(FLASH_COOKIE)

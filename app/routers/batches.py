@@ -11,7 +11,7 @@ from app.forms import form_text
 from app.matching import fuzzy_find_participant
 from app.models import BillingRecord, Exception_, Upload, UploadKind
 from app.render import render
-from app.security import get_current_user, log_audit
+from app.security import get_current_user, log_audit, require_admin
 
 router = APIRouter()
 
@@ -131,7 +131,7 @@ def delete_row(
     request: Request,
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     the_date = parse_iso_date(date)
     row = db.get(BillingRecord, row_id)

@@ -13,7 +13,7 @@ from app.render import render
 # sharing its coercion keeps the two screens from disagreeing about what
 # a valid rule is (and stops a typed rate raising a 500 here).
 from app.routers.participants import validate_rule_fields
-from app.security import get_current_user, log_audit
+from app.security import get_current_user, log_audit, require_admin
 
 router = APIRouter()
 
@@ -40,7 +40,7 @@ def add_rule(
     notes: str = Form(""),
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     fields, error = validate_rule_fields(
         payer_source, rate, grant_rule_type, grant_cycle_length,
@@ -76,7 +76,7 @@ def edit_rule(
     notes: str = Form(""),
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     rule = db.get(RateRule, rule_id)
     if rule is None:
@@ -109,7 +109,7 @@ def deactivate_rule(
     request: Request,
     csrf_token: str = Depends(verify_csrf),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_admin),
 ):
     rule = db.get(RateRule, rule_id)
     if rule:

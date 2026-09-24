@@ -40,7 +40,7 @@
           <td data-label="Amount"><input type="text" name="amount_{{ row.id }}" value="{{ '%.2f'|format(row.amount) if row.amount is not none else '' }}"></td>
           <td data-label="Units"><input type="text" name="units_{{ row.id }}" value="{{ row.units or '' }}"></td>
           <td data-label="Verified">{% if row.verified %}<span class="badge badge-ok">yes</span>{% else %}<span class="badge badge-warn">pending</span>{% endif %}</td>
-          <td><button type="submit" class="danger" formaction="/batches/{{ date.isoformat() }}/review/delete/{{ row.id }}">Delete</button></td>
+          <td>{% if is_admin %}<button type="submit" class="danger" formaction="/batches/{{ date.isoformat() }}/review/delete/{{ row.id }}">Delete</button>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

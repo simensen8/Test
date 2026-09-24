@@ -20,8 +20,8 @@ from app.migrations import run_migrations
 from app.models import User
 from app.render import render
 from app.routers import (
-    account, admin, auth, batches, calendar, checkin, dashboard, participants, rate_master,
-    reports, uploads,
+    account, admin, admin_import, auth, batches, calendar, checkin, dashboard, participants,
+    rate_master, reports, uploads,
 )
 from app.security import SESSION_COOKIE_NAME, refresh_session_token
 
@@ -77,6 +77,7 @@ app.include_router(calendar.router)
 app.include_router(participants.router)
 app.include_router(rate_master.router)
 app.include_router(admin.router)
+app.include_router(admin_import.router)
 
 
 @app.middleware("http")

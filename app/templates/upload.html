@@ -1,44 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Upload documents{% endblock %}
+{% block title %}Upload batches{% endblock %}
 {% block content %}
-<h1>Upload source documents</h1>
+<h1 style="margin-bottom:.25rem;">Upload PCC batches</h1>
 <p class="muted">Uploaded files are encrypted at rest. Every upload and view is recorded in the audit log.</p>
 
-<div class="grid-2">
-  <div class="panel">
-    <h2 style="margin-top:0;">Weekly Attendance</h2>
-    <p class="muted">One worksheet per week (Monday&ndash;Friday), transcribed from the paper sign-in sheet. Excel (.xlsx) or OpenDocument (.ods).</p>
-    <form method="post" action="/upload/attendance" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="week_start">Week start (Monday)</label>
-      <input type="date" id="week_start" name="week_start" value="{{ today }}" required>
-      <label for="attendance_file">Attendance file (.xlsx, .ods)</label>
-      <input type="file" id="attendance_file" name="file" accept=".xlsx,.xls,.ods" required>
-      <div style="margin-top:1rem;"><button type="submit">Upload attendance</button></div>
-    </form>
-  </div>
-
-  <div class="panel">
-    <h2 style="margin-top:0;">Daily PCC Ancillary Batch</h2>
-    <p class="muted">One export per billing day. Save the PCC batch detail report as a webpage (.html) &mdash; a PDF export also works. You can select a whole week's files at once; each one is filed under the service date printed on it, so there's no date to key in.</p>
-    <form method="post" action="/upload/pcc-batch" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label for="batch_file">Batch file(s) (.html, .htm, .pdf)</label>
-      <input type="file" id="batch_file" name="files" accept=".html,.htm,.pdf" multiple required>
-      <p class="muted" style="margin:.4rem 0 0;">Uploading a day again replaces that day rather than adding to it.</p>
-      <div style="margin-top:1rem;"><button type="submit">Upload batch</button></div>
-    </form>
-  </div>
-</div>
-
 <div class="panel">
-  <h2 style="margin-top:0;">Rate Master</h2>
-  <p class="muted">Consolidated payer-exception list. Participants not listed default to Private Pay. Uploading a new file replaces auto-imported rules (manually-added rules are kept).</p>
-  <form method="post" action="/upload/rate-master" enctype="multipart/form-data">
+  <h2 style="margin-top:0;">Daily PCC Ancillary Batch</h2>
+  <p class="muted">
+    One export per billing day. Save the PCC batch detail report as a webpage (.html) &mdash; a PDF
+    export also works. You can select a whole week's files at once; each one is filed under the
+    service date printed on it, so there's no date to key in.
+  </p>
+  <form method="post" action="/upload/pcc-batch" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="rate_file">Excel file (.xlsx)</label>
-    <input type="file" id="rate_file" name="file" accept=".xlsx,.xls" required>
-    <div style="margin-top:1rem;"><button type="submit">Upload rate master</button></div>
+    <label for="batch_file">Batch file(s) (.html, .htm, .pdf)</label>
+    <input type="file" id="batch_file" name="files" accept=".html,.htm,.pdf" multiple required>
+    <p class="muted" style="margin:.4rem 0 0;">Uploading a day again replaces that day rather than adding to it.</p>
+    <div style="margin-top:1rem;"><button type="submit">Upload batch</button></div>
   </form>
 </div>
+
+<p class="muted">
+  Attendance is recorded on the <a href="/check-in">check-in screen</a>, and how each participant is
+  billed lives on their <a href="/participants">profile</a>. Neither is uploaded day to day.
+  {% if user.role.value == "admin" %}
+    Setting up the roster from the original workbooks is a one-time step under
+    <a href="/admin/import">Import</a>.
+  {% endif %}
+</p>
 {% endblock %}

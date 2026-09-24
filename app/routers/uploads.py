@@ -1,32 +1,24 @@
 import datetime
 import logging
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile
-from starlette.datastructures import UploadFile as StarletteUploadFile
+from fastapi import APIRouter, Depends, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.csrf import verify_csrf
-from app.dates import parse_iso_date
 from app.db import get_db
 from app.flash import set_flash
 from app.forms import uploaded_files
-from app.matching import get_or_create_participant
 from app.models import (
-    AttendanceRecord,
-    AttendanceSource,
     BillingRecord,
     Exception_,
-    GrantRuleType,
-    RateRule,
     ReconciliationRun,
     Upload,
     UploadKind,
 )
-from app.parsers.attendance import parse_weekly_attendance
 from app.parsers.pcc_batch import parse_pcc_batch
-from app.parsers.rate_master import parse_rate_master
 from app.render import render
 from app.security import get_current_user, log_audit
 from app.storage import save_encrypted
@@ -91,182 +83,6 @@ def _missing(file: UploadFile | None) -> bool:
 @router.get("/upload")
 def upload_form(request: Request, user=Depends(get_current_user)):
     return render(request, "upload.html", {"today": datetime.date.today().isoformat()}, user=user)
-
-
-@router.post("/upload/attendance")
-async def upload_attendance(
-    request: Request,
-    week_start: str = Form(...),
-    file: UploadFile | None = None,
-    csrf_token: str = Depends(verify_csrf),
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    week_start_date = parse_iso_date(week_start)
-    if week_start_date is None:
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, "Invalid week start date.", "error")
-        return resp
-    if _missing(file):
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, "No attendance file was selected.", "error")
-        return resp
-    assert file is not None  # narrowed by _missing above
-
-    try:
-        raw = await _read_limited(file)
-    except ValueError as exc:
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, str(exc), "error")
-        return resp
-
-    # Parsed before it is stored: a file that turns out not to be a
-    # workbook should leave nothing behind but the error message.
-    try:
-        result = parse_weekly_attendance(raw, week_start_date)
-    except Exception:
-        logger.exception("Weekly attendance upload could not be parsed")
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, "That file couldn't be read as a weekly attendance workbook. "
-                        "Please check it opens in Excel and is the right file, then try again.", "error")
-        return resp
-
-    stored_path = save_encrypted("weekly_attendance", file.filename or "attendance", raw)
-
-    upload = Upload(
-        kind=UploadKind.WEEKLY_ATTENDANCE,
-        original_filename=file.filename or "(unnamed)",
-        stored_path=stored_path,
-        uploaded_by_id=user.id,
-        week_start=week_start_date,
-    )
-    db.add(upload)
-    db.flush()
-
-    created_count = 0
-    ambiguous_warnings: list[str] = []
-    for row in result.rows:
-        participant, created, ambiguity = get_or_create_participant(db, row.participant_name)
-        if created:
-            created_count += 1
-        if ambiguity:
-            ambiguous_warnings.append(ambiguity)
-        for day, attended in row.attendance_by_date.items():
-            existing = db.scalar(
-                select(AttendanceRecord).where(
-                    AttendanceRecord.participant_id == participant.id,
-                    AttendanceRecord.date == day,
-                )
-            )
-            if existing:
-                # The uploaded sheet is the transcription of the signed
-                # paper record, so it wins over a check-in mark for the
-                # same day -- and the row records that it came from the
-                # sheet, not from whoever last touched the screen.
-                existing.attended = attended
-                existing.source = AttendanceSource.UPLOAD
-                existing.source_upload_id = upload.id
-                existing.recorded_by_id = user.id
-                existing.recorded_at = datetime.datetime.utcnow()
-            else:
-                db.add(AttendanceRecord(
-                    participant_id=participant.id, date=day, attended=attended,
-                    source=AttendanceSource.UPLOAD, source_upload_id=upload.id,
-                    recorded_by_id=user.id, recorded_at=datetime.datetime.utcnow(),
-                ))
-
-    all_warnings = result.warnings + ambiguous_warnings
-    upload.parse_warnings = "\n".join(all_warnings) or None
-    db.commit()
-
-    log_audit(db, user=user, action="upload_weekly_attendance", resource=upload.id, request=request,
-               detail=f"{len(result.rows)} participant rows, week of {week_start_date}")
-
-    resp = RedirectResponse(url="/dashboard?week=" + week_start_date.isoformat(), status_code=303)
-    msg = f"Weekly attendance uploaded: {len(result.rows)} participants ({created_count} new)."
-    if all_warnings:
-        msg += " Warnings: " + "; ".join(all_warnings)
-    set_flash(resp, msg, "success" if not all_warnings else "error")
-    return resp
-
-
-@router.post("/upload/rate-master")
-async def upload_rate_master(
-    request: Request,
-    file: UploadFile | None = None,
-    csrf_token: str = Depends(verify_csrf),
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    if _missing(file):
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, "No Rate Master file was selected.", "error")
-        return resp
-    assert file is not None  # narrowed by _missing above
-
-    try:
-        raw = await _read_limited(file)
-    except ValueError as exc:
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, str(exc), "error")
-        return resp
-
-    try:
-        result = parse_rate_master(raw)
-    except Exception:
-        logger.exception("Rate Master upload could not be parsed")
-        resp = RedirectResponse(url="/upload", status_code=303)
-        set_flash(resp, "That file couldn't be read as a Rate Master workbook. "
-                        "Please check it opens in Excel and is the right file, then try again.", "error")
-        return resp
-
-    stored_path = save_encrypted("rate_master", file.filename or "rate_master", raw)
-
-    upload = Upload(
-        kind=UploadKind.RATE_MASTER,
-        original_filename=file.filename or "(unnamed)",
-        stored_path=stored_path,
-        uploaded_by_id=user.id,
-    )
-    db.add(upload)
-    db.flush()
-
-    # A fresh rate master supersedes prior auto-imported rules so stale
-    # exceptions don't linger; manually-added rules (source_upload_id is
-    # None) are left untouched.
-    for rule in db.scalars(select(RateRule).where(RateRule.source_upload_id.isnot(None))):
-        rule.active = False
-
-    ambiguous_warnings: list[str] = []
-    for row in result.rows:
-        participant, _, ambiguity = get_or_create_participant(db, row.participant_name)
-        if ambiguity:
-            ambiguous_warnings.append(ambiguity)
-        db.add(RateRule(
-            participant_id=participant.id,
-            payer_source=row.payer_source,
-            rate=row.rate,
-            grant_rule_type=GrantRuleType(row.grant_rule_type),
-            grant_cycle_length=row.grant_cycle_length,
-            grant_cycle_secondary_days=row.grant_cycle_secondary_days,
-            grant_payer=row.grant_payer,
-            notes=row.notes,
-            source_upload_id=upload.id,
-        ))
-
-    all_warnings = result.warnings + ambiguous_warnings
-    upload.parse_warnings = "\n".join(all_warnings) or None
-    db.commit()
-
-    log_audit(db, user=user, action="upload_rate_master", resource=upload.id, request=request,
-               detail=f"{len(result.rows)} rate rules")
-
-    resp = RedirectResponse(url="/rate-master", status_code=303)
-    msg = f"Rate Master uploaded: {len(result.rows)} rules loaded."
-    if all_warnings:
-        msg += " Please review: " + "; ".join(all_warnings)
-    set_flash(resp, msg, "success" if not all_warnings else "error")
-    return resp
 
 
 @router.post("/upload/pcc-batch")
