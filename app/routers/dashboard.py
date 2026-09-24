@@ -34,15 +34,16 @@ from app.models import (
     UploadKind,
 )
 from app.render import render
-from app.routers.billing import day_state, monday_of
+from app.routers.billing import day_states, monday_of
 from app.routers.checkin import scheduled_participants
 from app.security import get_current_user, log_audit
 
 router = APIRouter()
 
-# How far back the "needs attention" list looks. Two weeks is long
-# enough to catch a day that slipped during a holiday week, and short
-# enough that the list stays something a person can actually clear.
+# How far back the "needs attention" list looks, counting today. Two
+# weeks is long enough to catch a day that slipped during a holiday
+# week, and short enough that the list stays something a person can
+# actually clear.
 ATTENTION_WINDOW_DAYS = 14
 
 
@@ -82,18 +83,18 @@ def _needs_attention(db: Session, today: datetime.date) -> list[dict]:
     program was closed has no billing to do, and listing it as
     outstanding would teach people to ignore the list.
     """
-    out = []
-    for offset in range(ATTENTION_WINDOW_DAYS, -1, -1):
-        day = today - datetime.timedelta(days=offset)
-        if day.weekday() > 4:
-            continue
-        state = day_state(db, day)
-        if state["next_action"] is None:
-            continue
-        if not state["has_batch"] and not state["has_attendance"]:
-            continue
-        out.append(state)
-    return out
+    weekdays = [
+        day for day in (
+            today - datetime.timedelta(days=offset)
+            for offset in range(ATTENTION_WINDOW_DAYS - 1, -1, -1)
+        )
+        if day.weekday() <= 4
+    ]
+    return [
+        state for state in day_states(db, weekdays)
+        if state["next_action"] is not None
+        and (state["has_batch"] or state["has_attendance"])
+    ]
 
 
 @router.get("/dashboard")
@@ -160,6 +161,12 @@ def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_
         "billed_total": billed_total,
         "billed_days": billed_days,
         "reconciled_days": reconciled_days,
+        # Reconciling a day that has attendance but no batch is a
+        # legitimate thing to do -- it is how "attended but never
+        # billed" is found -- so the count of reconciled days can run
+        # ahead of the days with billing on them. The denominator is
+        # whichever is larger, or the tile reads "1 / 0".
+        "billing_days_total": max(billed_days, reconciled_days),
         "open_exceptions": open_exceptions,
         "settled_exceptions": settled_exceptions,
         "by_reason": [(reason.value.replace("_", " "), count) for reason, count in by_reason],

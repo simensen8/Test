@@ -35,7 +35,8 @@ from app.security import hash_password
 DAY = datetime.date(2026, 9, 10)
 
 
-def _setup(db, *, rate, billed, payer="Private Pay", billed_payer=None, rule_kwargs=None):
+def _setup(db, *, rate, billed, payer="Private Pay", billed_payer=None, rule_kwargs=None,
+           units=None):
     """One participant who attended, with a rate on file and a charge."""
     user = User(email="t@example.org", display_name="T",
                 password_hash=hash_password("x" * 12), role=Role.ADMIN)
@@ -54,7 +55,7 @@ def _setup(db, *, rate, billed, payer="Private Pay", billed_payer=None, rule_kwa
                             source=AttendanceSource.CHECK_IN))
     db.add(BillingRecord(raw_name="Adams, Alice", date=DAY,
                          payer_source=billed_payer or payer, amount=billed,
-                         source_upload_id=upload.id, verified=True))
+                         units=units, source_upload_id=upload.id, verified=True))
     db.commit()
     return user, person
 
@@ -177,3 +178,75 @@ def test_a_settled_rate_finding_survives_a_re_run(db_session):
     assert len(settled) == 1
     assert settled[0].status == ExceptionStatus.NOT_AN_ERROR
     assert "Sharelle" in settled[0].resolution_notes
+
+
+# ------------------------------------------------------------- units -----
+# The rate on a profile is a per-day figure. Every line in the batches
+# seen so far is one unit, but a line billed for more than one is a
+# multiple of that rate, not a mismatch.
+
+
+def test_a_two_unit_line_is_measured_against_twice_the_rate(db_session):
+    db = db_session
+    user, _ = _setup(db, rate=95.00, billed=190.00, units="2")
+
+    run_reconciliation(db, DAY, user.id)
+
+    assert _rate_exceptions(db) == []
+
+
+def test_a_two_unit_line_charged_a_single_rate_is_still_caught(db_session):
+    db = db_session
+    user, _ = _setup(db, rate=95.00, billed=95.00, units="2")
+
+    run_reconciliation(db, DAY, user.id)
+
+    findings = _rate_exceptions(db)
+    assert len(findings) == 1
+    assert findings[0].expected_billing == "$190.00"
+    assert "x 2 units" in findings[0].detail
+
+
+def test_a_single_unit_finding_does_not_mention_units(db_session):
+    """"at $95.00 per day x 1 units" reads as though something unusual
+    happened, on the line where nothing did."""
+    db = db_session
+    user, _ = _setup(db, rate=95.00, billed=63.26, units="1")
+
+    run_reconciliation(db, DAY, user.id)
+
+    detail = _rate_exceptions(db)[0].detail
+    assert "per day," in detail
+    assert "units" not in detail
+
+
+def test_an_unreadable_units_field_is_left_alone(db_session):
+    """Not something to guess at: without a number, there is no charge to
+    expect, and a made-up one would be reported as money."""
+    db = db_session
+    user, _ = _setup(db, rate=95.00, billed=46.00, units="see note")
+
+    run_reconciliation(db, DAY, user.id)
+
+    assert _rate_exceptions(db) == []
+
+
+def test_a_blank_units_field_is_treated_as_one_day(db_session):
+    """The field is free text off a PCC report and is sometimes empty."""
+    db = db_session
+    user, _ = _setup(db, rate=95.00, billed=46.00, units="")
+
+    run_reconciliation(db, DAY, user.id)
+
+    findings = _rate_exceptions(db)
+    assert len(findings) == 1
+    assert findings[0].expected_billing == "$95.00"
+
+
+def test_zero_units_is_left_alone(db_session):
+    db = db_session
+    user, _ = _setup(db, rate=95.00, billed=46.00, units="0")
+
+    run_reconciliation(db, DAY, user.id)
+
+    assert _rate_exceptions(db) == []

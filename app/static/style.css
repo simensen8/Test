@@ -121,16 +121,30 @@ header.topbar :focus-visible { outline-color: #fff; }
 }
 .account-menu .who { padding: 0.5rem 0.6rem 0.6rem; border-bottom: 1px solid var(--border); }
 .account-menu .who strong { display: block; }
-.account-menu a, .account-menu button {
-  display: block; width: 100%; text-align: left;
-  padding: 0.6rem; border-radius: 6px; font-size: 0.92rem;
+/* Scoped through `header.topbar` on purpose. The bar sets every link
+   inside it to white, which outweighed a bare `.account-menu a` and
+   painted this menu's links white on a white panel -- present in the
+   markup, invisible on the screen. */
+header.topbar .account-menu a, .account-menu button {
+  /* `justify-content: flex-start` because the global button rule
+     centres its text, which left "Sign out" adrift in the middle of a
+     column of left-aligned links. */
+  display: flex; align-items: center; justify-content: flex-start;
+  width: 100%; text-align: left;
+  padding: 0.55rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.92rem;
   background: none; border: none; color: var(--text); cursor: pointer;
   min-height: var(--tap);
 }
-.account-menu a:hover, .account-menu button:hover { background: var(--primary-tint); color: var(--primary); }
+header.topbar .account-menu a:hover, .account-menu button:hover {
+  background: var(--primary-tint); color: var(--primary);
+}
 /* The menu's own items are links and a form button; the global button
    style would otherwise make Sign out look like a call to action. */
 .account-menu button { box-shadow: none; font-weight: 400; }
+
+/* The overflow navigation inside the account menu is for phones only;
+   on a wider screen those links are already in the bar above. */
+.account-menu .menu-nav { display: none; }
 .account-menu form { margin: 0; }
 
 main { max-width: 1100px; margin: 1.75rem auto; padding: 0 1rem 3rem; }
@@ -158,7 +172,7 @@ h3 { font-size: 0.98rem; line-height: 1.35; margin: 1.25rem 0 0.4rem; }
 
 /* This is a billing tool: columns of money and counts have to line up
    under each other, which proportional digits will not do. */
-table, .kpi-value, .stat .value, .badge, time { font-variant-numeric: tabular-nums; }
+table, .kpi-value, .badge, time { font-variant-numeric: tabular-nums; }
 
 .panel {
   background: var(--panel);
@@ -195,8 +209,6 @@ th {
 tbody tr:last-child td { border-bottom: none; }
 tr:hover td { background: #f8fafc; }
 
-/* Money belongs under money. */
-td.num, th.num { text-align: right; }
 
 /* The exception report's columns are left to the browser to size. Two
    attempts to improve on it were worse: fixed widths cut off the reason
@@ -206,9 +218,6 @@ td.num, th.num { text-align: right; }
    viewport can never truncate them. */
 .exceptions select, .exceptions input[type=text] { min-width: 6.5rem; }
 
-/* A genuinely wide data table may scroll sideways inside its own box --
-   but only where it is asked for, never the whole page. */
-.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .badge {
   display: inline-block;
@@ -331,13 +340,7 @@ label { color: var(--text); }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
 .week-nav { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
-.day-card { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
-  padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 0.5rem; }
 
-/* A row of numbers -- the counts on check-in, import and the dashboard. */
-.stats { display: flex; flex-wrap: wrap; gap: 1.5rem; }
-.stat .value { font-size: 2rem; font-weight: 700; line-height: 1; letter-spacing: -0.028em; }
-.stat .label { color: var(--muted); font-size: 0.88rem; }
 
 /* KPI tiles. Each one is a figure a person came to the page to read, so
    the number is the largest thing in the tile and the label sits under
@@ -388,8 +391,6 @@ label { color: var(--text); }
   h2 { margin-top: 1.5rem; }
   .panel { padding: 1rem; border-radius: 10px; }
   .grid-2 { grid-template-columns: 1fr; gap: 1rem; }
-  .stats { gap: 1rem 1.75rem; }
-  .stat .value { font-size: 1.6rem; }
 
   /* The secondary links move into the account menu and the bar below, so
      the header keeps only identity. */
@@ -442,6 +443,8 @@ label { color: var(--text); }
   .mobile-nav .icon { font-size: 1.1rem; line-height: 1; }
 
   .account-menu { position: fixed; left: 0.75rem; right: 0.75rem; top: 3.5rem; min-width: 0; }
+  .account-menu .menu-nav { display: block; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; margin-bottom: 0.3rem; }
+  header.topbar .account-menu .menu-nav a[aria-current="page"] { color: var(--primary); font-weight: 600; }
 }
 
 /* =========================== tablet ================================== */

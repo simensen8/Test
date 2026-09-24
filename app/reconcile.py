@@ -102,6 +102,24 @@ def _payers_match(expected: str, actual: str | None) -> bool:
     return " ".join(expected.strip().lower().split()) == " ".join(actual.strip().lower().split())
 
 
+def _billed_units(raw: str | None) -> float | None:
+    """How many units a batch line was billed for.
+
+    Blank means one: the field is free text off a PCC report, and every
+    line in the batches seen so far reads "1". A value that is present
+    but unreadable, or zero or negative, returns None so the caller
+    leaves the line alone rather than comparing against a number it made
+    up.
+    """
+    if raw is None or not raw.strip():
+        return 1.0
+    try:
+        units = float(raw.strip())
+    except ValueError:
+        return None
+    return units if units > 0 else None
+
+
 def _rate_mismatch(expected: ExpectedBilling, row: BillingRecord) -> tuple[float, float] | None:
     """The rate on the profile against what PCC charged, or None when the
     two can't be compared meaningfully.
@@ -122,6 +140,13 @@ def _rate_mismatch(expected: ExpectedBilling, row: BillingRecord) -> tuple[float
     exception, and the rate is wrong only as a consequence -- saying so
     twice makes the report longer without making it more useful.
 
+    A line billed for something other than one unit. The rate on a
+    profile is a per-day figure, so the charge to expect is the rate
+    times the units billed. Every line in the batches seen so far is one
+    unit, but comparing a two-unit charge against a one-day rate would
+    report a mismatch on a line that is perfectly correct -- and a units
+    field we cannot read is not something to guess at.
+
     Only an exact match passes. This is money, and a cent of drift
     across eighty-eight participants is a real number by month end.
     """
@@ -130,9 +155,13 @@ def _rate_mismatch(expected: ExpectedBilling, row: BillingRecord) -> tuple[float
         return None
     if expected.is_grant_day:
         return None
-    if abs(row.amount - rule.rate) < 0.005:
+    units = _billed_units(row.units)
+    if units is None:
         return None
-    return rule.rate, row.amount
+    expected_amount = rule.rate * units
+    if abs(row.amount - expected_amount) < 0.005:
+        return None
+    return expected_amount, row.amount
 
 
 def _resolution_key(participant_id: str | None, name_snapshot: str, reason: ExceptionReason) -> tuple:
@@ -254,13 +283,20 @@ def run_reconciliation(db: Session, on_date: datetime.date, run_by_id: str) -> R
             else:
                 mismatch = _rate_mismatch(expected, row)
                 if mismatch is not None:
-                    on_file, billed = mismatch
+                    should_be, billed = mismatch
+                    rate = expected.rule.rate if expected.rule else None
+                    units = _billed_units(row.units) or 1.0
+                    # Only spell out the arithmetic when it isn't the
+                    # usual single day; "at $95.00 per day x 1" reads as
+                    # though something unusual happened.
+                    basis = (f"${rate:.2f} per day" if units == 1
+                             else f"${rate:.2f} per day x {units:g} units")
                     add_exception(
                         participant, participant.full_name, ExceptionReason.WRONG_RATE,
-                        expected=f"${on_file:.2f}", actual=f"${billed:.2f}",
-                        detail=(f"The profile has {expected.payer} at ${on_file:.2f} per day; the "
-                                f"PCC batch charged ${billed:.2f}. Either the charge is wrong or "
-                                f"the rate on the profile is out of date."),
+                        expected=f"${should_be:.2f}", actual=f"${billed:.2f}",
+                        detail=(f"The profile has {expected.payer} at {basis}, so this line should "
+                                f"be ${should_be:.2f}; the PCC batch charged ${billed:.2f}. Either "
+                                f"the charge is wrong or the rate on the profile is out of date."),
                         billing_record_id=row.id,
                     )
 

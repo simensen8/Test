@@ -163,5 +163,20 @@ def logout(request: Request, csrf_token: str = Depends(verify_csrf), db: Session
     if user:
         log_audit(db, user=user, action="logout", request=request)
     resp = RedirectResponse(url="/login", status_code=303)
-    resp.delete_cookie(SESSION_COOKIE_NAME)
+    # Reading the user above armed the sliding-expiration refresh, which
+    # runs after this route and would set a fresh, valid cookie straight
+    # over the deletion below -- so "Sign out" left the session alive.
+    # On shared machines that is the whole point of the button.
+    request.state.needs_refresh = False
+    resp.delete_cookie(
+        SESSION_COOKIE_NAME,
+        # A cookie is only replaced by one with the same name, path and
+        # domain. These have to match what create_session_token's
+        # set_cookie used, or the browser keeps the original alongside
+        # the deletion and stays signed in.
+        path="/",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+    )
     return resp

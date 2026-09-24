@@ -85,7 +85,7 @@
       </div>
     </div>
     <div class="kpi">
-      <div class="kpi-value">{{ reconciled_days }}<span class="kpi-of">/ {{ billed_days }}</span></div>
+      <div class="kpi-value">{{ reconciled_days }}<span class="kpi-of">/ {{ billing_days_total }}</span></div>
       <div class="kpi-label">days reconciled</div>
     </div>
     <div class="kpi {{ 'kpi-danger' if open_exceptions else 'kpi-ok' }}">

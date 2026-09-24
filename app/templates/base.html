@@ -62,6 +62,16 @@
             <span class="muted">{{ user.email }}</span><br>
             <span class="badge {{ 'badge-ok' if is_admin else 'badge-muted' }}">{{ user.role.value }}</span>
           </div>
+          {# On a phone the top bar's links are hidden and the bottom bar
+             carries only the four primary ones, which left Calendar with
+             no route to it at all. The rest live here, shown at phone
+             width only so the desktop menu is not a duplicate of the bar
+             directly above it. #}
+          <div class="menu-nav">
+            {% for item in nav_items if not item.primary %}
+            <a href="{{ item.href }}" {{ nav_current(item, here) }}>{{ item.label }}</a>
+            {% endfor %}
+          </div>
           <a href="/account/password">Password &amp; security</a>
           {% if is_admin %}
           <a href="/admin/users">Manage users</a>

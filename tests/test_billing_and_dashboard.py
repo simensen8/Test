@@ -140,15 +140,9 @@ def test_only_the_newest_run_for_a_day_is_reported(client, db_session):
     assert state["open_exceptions"] == 1
 
 
-def test_a_week_is_read_in_a_handful_of_queries(client, db_session):
-    """The dashboard asks about a fortnight at a time. Answering that a
-    day at a time made ninety round trips for one page."""
+def _count_queries(db_session, work):
+    """Run `work` and return every SQL statement it caused."""
     from sqlalchemy import event
-
-    from app.routers.billing import day_states
-    _row(db_session, verified=True)
-    _run(db_session, open_exceptions=1)
-    db_session.commit()
 
     seen = []
 
@@ -158,11 +152,42 @@ def test_a_week_is_read_in_a_handful_of_queries(client, db_session):
     engine = db_session.get_bind()
     event.listen(engine, "before_cursor_execute", record)
     try:
-        day_states(db_session, [DAY + datetime.timedelta(days=n) for n in range(14)])
+        work()
     finally:
         event.remove(engine, "before_cursor_execute", record)
+    return seen
 
+
+def test_a_week_is_read_in_a_handful_of_queries(client, db_session):
+    """Answering a day at a time made ninety round trips for one page."""
+    from app.routers.billing import day_states
+    _row(db_session, verified=True)
+    _run(db_session, open_exceptions=1)
+    db_session.commit()
+
+    seen = _count_queries(db_session, lambda: day_states(
+        db_session, [DAY + datetime.timedelta(days=n) for n in range(14)]))
     assert len(seen) <= 8, f"{len(seen)} queries for a fortnight"
+
+
+def test_the_dashboard_itself_does_not_query_day_by_day(client, db_session):
+    """The regression that matters.
+
+    An earlier version of this file only measured `day_states`, which was
+    bulk all along -- while the dashboard still called it once per day
+    and issued 68 queries for one page. Measuring the helper proved
+    nothing about the page, so this drives the real route.
+    """
+    today = datetime.date.today()
+    for n in range(14):
+        day = today - datetime.timedelta(days=n)
+        if day.weekday() > 4:
+            continue
+        _row(db_session, f"Person{n}, Test", day, verified=True)
+    db_session.commit()
+
+    seen = _count_queries(db_session, lambda: client.get("/dashboard"))
+    assert len(seen) <= 25, f"{len(seen)} queries to render the dashboard"
 
 
 # ------------------------------------------------------------- pages ------
