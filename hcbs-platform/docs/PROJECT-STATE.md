@@ -6,16 +6,16 @@
 An HCBS workforce, care-management, payroll, compliance, and operations platform for a NJ-based healthcare organization, architected to extend to more states, tenants, and service lines. Full product vision: `docs/ARCHITECTURE.md` (condensed) and the originating design conversation (not copied verbatim into this repo — see "Why source documents aren't copied in full" below).
 
 ## Environment reality (read this before assuming otherwise)
-This repository was built and is currently being extended inside a claude.ai chat sandbox with an ephemeral container — **not** inside the actual Claude Code product. State persists *within* one chat conversation's tool calls but **does not persist across conversations** and there is no git remote yet. Everything in this file is only real until the repo is exported (tarball) and pushed to an actual git remote and opened in a persistent environment. Do not proceed as if a previous "session" in the Claude Code sense occurred — there hasn't been one yet.
+As of 2026-09-26 the repo lives in GitHub `simensen8/Test` (**public** — never commit PHI, org data, or secrets), under `hcbs-platform/`, worked on in Claude Code on the web. The repository root holds a separate, working Python app (Adult Day billing reconciliation) — see `AUDIT-2026-09-26.md` §1 and OPEN-QUESTIONS #9–10. Local PostgreSQL 16 and Docker are available in the Claude Code container.
 
 ## Current phase
-Phase 1 (Foundation): domain-logic slice is implemented and tested. Phase 1's other listed components (tenancy *as persisted entities*, migrations against a live database, security foundation beyond the RBAC function, test infrastructure beyond Vitest) are partially done — see Gap Table below. Initialization/control-layer work (this update) is now also done. **Phase 2 (Client/Care Management foundation) has not started.**
+**Audit complete (2026-09-26); awaiting approval to start Phase 1 hardening.** Bootstrap domain slice is implemented and tested, but the audit found 12 defects (D1–D12; five High: D1 authz, D2 audit, D3 payroll export, D4 mileage, D8 time/travel; plus D6 High-compliance and D10 High-when-DB-lands) — see `AUDIT-2026-09-26.md`. No feature work since the bootstrap.
 
 ## Last commit
-`14d1e21` — "Bootstrap Phase 1: identity/RBAC, audit ledger, time/leave/mileage/classification domain modules, 20 golden compliance tests, docs" (this update's control-layer docs are staged for the next commit — see bottom of this file for the exact commit hash once made).
+See `git log`. Audit commits: subtree import of the bootstrap (history preserved), CI relocation, audit docs.
 
 ## Tests passing
-`npx tsc --noEmit` — clean. `npx vitest run` — 20/20 passing (`tests/golden.test.ts`).
+Verified 2026-09-26 in Claude Code: `npm run typecheck` clean; `npm test` 20/20; `npm audit` 0 vulnerabilities. Root Python app: 201/201 (`python -m pytest`).
 
 ## Gap Table
 
@@ -58,9 +58,14 @@ See `docs/RESEARCH-LOG.md` — nine entries covering NJ travel time, NJ ESL per-
 Per `docs/RESEARCH-LOG.md` follow-ups: NJ employment counsel confirmation on travel-time scope; NJ DMAHS + MCO-contract confirmation on EVV applicability to any Medicaid-billed service line; sandbox confirmation of the actually-selected payroll vendor's idempotency/correction behavior; direct confirmation of the Align vendor's identity.
 
 ## Next actions (in order)
-1. Export this repository (tarball) and push to a real git remote.
-2. Open in an actual persistent Claude Code environment.
-3. Resolve `OPEN-QUESTIONS.md` #2 (RLS/connection strategy) and #3 (payroll vendor selection) — both are `DECISION_REQUIRED`, not implementation details, and several Gap Table items depend on them.
-4. Split `Actor` into `Actor` + `Employee` before Phase 3 work begins (see Gap Table).
-5. Stand up a real Postgres instance against `docs/db-schema-phase1.sql`; write a `PostgresAuditStore` implementing the existing `AuditStore` interface as a contract test alongside the in-memory one.
-6. Begin Phase 2 (Client / Care Management foundation) per `docs/ARCHITECTURE.md` and the development sequence in the master handoff.
+Proposed roadmap (pending approval; each phase = small vertical slices, each commit green):
+
+**Phase 1 — Foundation hardening (no new product surface).**
+1a. Fix D1–D5, D7–D9 with new adversarial tests beside the golden suite (golden tests untouched); D6 only after OPEN-QUESTIONS #11 is approved.
+1b. Tooling: lint/format, coverage, secret scanning + Dependabot in CI, SessionStart hook, agent/skill config per AGENT-WORKSTREAMS.
+1c. Postgres: migrations (plain SQL; tool choice recorded in IMPLEMENTATION-DECISIONS), composite tenant FKs, FORCE RLS + policies, non-owner app role, `PostgresAuditStore` with a contract test shared with the in-memory store, cross-tenant DB tests.
+1d. Effective-dated Rule/RuleVersion engine (jurisdiction, effective range, version, source, confidence, status, config, audit); migrate mileage rates, EAP/HCE thresholds, accountable-plan days, segment policies onto it; overlap detection.
+1e. Identity split: User / Actor / Employee / Employment; request context (tenant, actor, correlation id, source) threaded through authz + audit.
+1f. Time & money primitives: org timezone, local business date vs instant, integer minutes, integer minor-unit money with explicit rounding; DST/midnight tests.
+
+**Phase 2 — API, authentication, app shell** (needs OPEN-QUESTIONS #14). **Phase 3 — Workforce time & travel** (derived travel classification, timesheets, FLSA classification with unresolved state). **Phase 4 — Mileage & reimbursement ledger** (Rev. Rul. 99-7 classifier, accountable plan, tracking notice). **Phase 5 — Leave ledger** (PTO, NJ ESL benefit year, per-diem determination workflow). **Phase 6 — Payroll periods, export ledger & reconciliation** (vendor adapter after OPEN-QUESTIONS #3 + sandbox). Then: clients/care management (absorbing the Adult Day domain), scheduling/visits/EVV, documentation, billing, integrations, AI (observe→recommend→approve), analytics.
