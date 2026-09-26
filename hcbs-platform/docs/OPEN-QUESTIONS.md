@@ -1,0 +1,12 @@
+# Open Questions
+
+Classified per Blueprint §21: BLOCKER / DECISION_REQUIRED / CONFIGURATION_DEFAULT / RESEARCH_REQUIRED / IMPLEMENTATION_DETAIL.
+
+1. **[BLOCKER, Align integration only]** The identity of the "Align" CRM vendor is unconfirmed (most plausible candidate: Aline CRM, formed from the 2022 Enquire/Glennis/Sherpa merger — not verified with the actual vendor). No outbound webhook capability is documented. **Does not block** any other Phase 1–8 work; the integration adapter interface should be built now with a `pending` status and a manual-import fallback.
+2. **[DECISION_REQUIRED]** Row-level security connection strategy: session-variable-based (`SET app.tenant_id`) vs. per-tenant connection pooling vs. a schema-per-tenant approach. Affects the RLS policies stubbed in `docs/db-schema-phase1.sql`.
+3. **[DECISION_REQUIRED]** Target payroll vendor(s) for the first integration (ADP / Gusto / Paychex / QuickBooks Payroll) — needed before writing the first real vendor adapter (the interface itself is vendor-agnostic and doesn't need this decision).
+4. **[CONFIGURATION_DEFAULT]** GPS/location-tracking notice: given the NJ vehicle-tracking statute's exemption scope is uncertain (COMPLIANCE-ASSUMPTIONS #13), default to written notice for every employee whose location is captured for any purpose, not only mileage.
+5. **[CONFIGURATION_DEFAULT]** Overage/entitlement policy defaults (pre-authorize vs. auto-authorize vs. absorb up to N hours), rollover policy, and documentation grace window are all engineer-settable defaults per the original Blueprint v2 — not re-litigated here.
+6. **[RESEARCH_REQUIRED before Phase 11]** Rev. Rul. 99-7 commute-vs-business classification needs to be implemented as explicit logic (origin/destination type + "regular work location" attribute) before mileage reimbursement goes live for home-based staff — currently only the rate engine exists, not the commute/business classifier.
+7. **[RESEARCH_REQUIRED before Phase 12]** Confirm actual behavior of the chosen payroll vendor's API (idempotency, append vs. overwrite, post-close correction path) in a sandbox before relying on any assumption in COMPLIANCE-ASSUMPTIONS #15.
+8. **[IMPLEMENTATION_DETAIL]** Framework choice for the HTTP/API layer (Fastify vs. Express vs. Hono) — not yet selected; Phase 1 as built here has no HTTP layer, only domain logic and tests. See IMPLEMENTATION-DECISIONS.md #3.
