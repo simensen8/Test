@@ -1,0 +1,23 @@
+name: hcbs-platform CI
+on:
+  push:
+    paths: ["hcbs-platform/**", ".github/workflows/hcbs-platform-ci.yml"]
+  pull_request:
+    paths: ["hcbs-platform/**", ".github/workflows/hcbs-platform-ci.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hcbs-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hcbs-platform/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --audit-level=high

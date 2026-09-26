@@ -1,4 +1,22 @@
 node_modules/
 dist/
-.env
+coverage/
 *.log
+
+# Secrets and credentials -- never commit (this repository is public).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
+
+# PHI / real or generated sensitive data -- never commit.
+data/
+data*/
+exports/
+*.sqlite
+*.db
