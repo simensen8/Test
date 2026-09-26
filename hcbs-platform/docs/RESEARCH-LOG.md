@@ -1,6 +1,8 @@
 # Research Log
 
-Format: Question | Date checked | Source | Source type | Finding | Confidence | Implementation impact | Follow-up required.
+Format: Question | Why it matters | Date checked | Source | Source type | Finding | Confidence | Implementation impact | Owner | Next review. Vendor source types: official docs / sandbox-tested / production-tested / third-party report / inference.
+
+Entries dated 2026-09-26 (bottom) are first-hand re-verification in Claude Code; earlier entries are carried from the design conversation.
 
 Entries below summarize research already completed in the design conversation that produced this repo (two full validation passes). Full citation trails (exact URLs, quoted statutory/regulatory text) live in those documents, not duplicated here — this log carries the operative conclusion and where to look for more.
 
@@ -66,3 +68,23 @@ Entries below summarize research already completed in the design conversation th
 **Date checked:** 2026-09-25 · **Source:** general web search for products named "Align" in senior-care/home-care CRM contexts; Aline CRM (formed from the 2022 Enquire/Glennis/Sherpa merger) as the most plausible candidate · **Source type:** secondary, inconclusive
 **Finding:** No confirmed match. Aline CRM is the closest plausible candidate given its home-care/senior-living CRM positioning, but this has not been confirmed with the organization or the vendor.
 **Confidence:** UNRESOLVED · **Impact:** integration adapter interface exists conceptually; no implementation should proceed against assumed Aline (or any other) API behavior. **Follow-up:** confirm vendor identity directly with the organization before any Align-specific code is written (`OPEN-QUESTIONS.md` #1).
+
+---
+
+## Re-verification pass — 2026-09-26 (owner: Compliance workstream; next review: before each release, and 2027-01-02 for IRS 2027 rates)
+
+**Q:** 2026 IRS business mileage rates and citations? **Why:** reimbursement amounts. **Source:** irs.gov/tax-professionals/standard-mileage-rates (official). **Finding:** 72.5¢ Jan 1–Jun 30 (IR-2025-128); 76¢ Jul 1–Dec 31 (**IR-2026-29**). Medical/moving 20.5¢ → 23.5¢. **Confidence:** VERIFIED. **Impact:** correct seed citation; rates unchanged.
+
+**Q:** Federal EAP/HCE thresholds? **Why:** FLSA classification. **Source:** DOL WHD release whd20260514 (official) + secondary summaries. **Finding:** $684/wk ($35,568/yr), HCE $107,432; 2024 rule removed from CFR by technical amendment published 2026-05-15. **Confidence:** VERIFIED. **Impact:** none; move to effective-dated rule data. NJ-specific threshold: not researched — RESEARCH_REQUIRED.
+
+**Q:** HIPAA Security Rule NPRM status? **Source:** reginfo.gov RIN 0945-AA22; law-firm summaries. **Finding:** still proposed; Fall 2026 Unified Agenda lists it under Long-Term Actions, final action ~July 2027. **Confidence:** VERIFIED (status) / LIKELY (date). **Impact:** none.
+
+**Q:** NJ ESL per-diem definition and 40-hour limits — exact text? **Source:** P.L.2018 c.10 as enacted (pub.njleg.state.nj.us, official). **Finding:** per-diem requires, in addition to the professional/facility categories: (1) as-needed to supplement or replace/substitute for an absent health care employee; (2) works only when available, no obligation otherwise; (3) richer PTO opportunity or waived ESL. CHHAs excluded. Separate 40-hr limits on accrual, use, carry-forward; frontloading employer must pay out or carry forward unused. **Confidence:** VERIFIED against as-enacted text; later amendments not checked (justia.com blocked automated fetch). **Impact:** AUDIT D6, D7.
+
+**Q:** NJ vehicle-tracking statute exact definition? **Source:** P.L.2021 c.449 (official). **Finding:** "sole purpose of tracking" definition; excludes devices "used for the purpose of documenting employee expense reimbursement". **Confidence:** VERIFIED (text) / COUNSEL_REVIEW (scope). **Impact:** keep always-notify default (OPEN-QUESTIONS #4).
+
+**Q:** Which NJ Medicaid services require EVV today? **Source:** NJ DMAHS EVV page (official). **Finding:** PCA; MLTSS Home-Based Supportive Care; DDD Individual Supports, In-Home Respite, Community-Based Supports (since 2021-01-01; claims since 2021-07-01); home health (federal, 2023-01-01). Aggregator: HHAeXchange. **Confidence:** VERIFIED (list as published). **Impact:** service-definition-driven EVV flags; MCO contracts still to check.
+
+**Q:** Does Gusto document idempotency keys? **Source:** docs.gusto.com idempotency page (official docs). **Finding:** no — version-based optimistic concurrency only (409 on stale version). **Confidence:** VERIFIED (official docs, not sandbox-tested). **Impact:** correction to COMPLIANCE-ASSUMPTIONS #15; platform-side dedup applies to Gusto as well.
+
+**Q:** Does PostgreSQL RLS apply to table owners? **Source:** postgresql.org/docs/current/ddl-rowsecurity.html (official). **Finding:** superusers and BYPASSRLS roles always bypass; owners bypass unless `FORCE ROW LEVEL SECURITY`. **Confidence:** VERIFIED. **Impact:** AUDIT D10; app must connect as a non-owner role without BYPASSRLS, and tables use FORCE.
